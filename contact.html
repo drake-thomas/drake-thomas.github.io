@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 
-<head> 
+<head>
 	<title>Eli Tyre</title>
 	<link rel="stylesheet" type="text/css" href="css/main.css">
 	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
-	
+
 	<!-- Global site tag (gtag.js) - Google Analytics -->
 	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
 	<script>
@@ -30,24 +30,24 @@
 	});
 	</script>
 	<!--end of Navigation bar-->
-	
+
 	<div class="page title">
 		<h1>Contact info</h1>
 	</div>
-  
+
 <div>
-	<p> If you'd like to reach me about anything (possible collaborations, speaking enagements, questions about something I wrote, etc.), the two main ways are via email or twitter DM.</p> 
-	<p><em>Twitter handle:</em> <a href="https://twitter.com/EpistemicHope">@epistemichope</a></p> 
+	<p> If you'd like to reach me about anything (possible collaborations, speaking enagements, questions about something I wrote, etc.), the two main ways are via email or twitter DM.</p>
+	<p><em>Twitter handle:</em> <a href="https://twitter.com/EpistemicHope">@epistemichope</a></p>
 	<p><em>Email address:</em> elityre [at] [google's standard email service].com</p>
-  
+
 
 
 	<div id="last updated"></div>
-	
-	
-	
+
+
+
 	<script>
-		
+
 		// this part gets the file name from the URL.
 		var urlArray = window.location.href.split("/");
 
@@ -58,7 +58,7 @@
 		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
 		const getCommits = async pageName => {
 
-			var result = await fetch('https://api.github.com/repos/etyre/elityre.com/commits?path='+ encodeURIComponent(pageName));
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
 
 			var data = await result.json();
 
@@ -72,7 +72,7 @@
 
 			console.log(formattedDate)
 
-			
+
 
 
 			document.getElementById('last updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
@@ -83,9 +83,8 @@
 			// const data = await getCommits('test');
 			// Make some notes about Await and what it does.
 			// Note that you can only use await inside of an async function.
-			
+
 			getCommits(nameOfThisPage);
-			
-		</script>	
+
+		</script>
   </div>
-    

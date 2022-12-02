@@ -40,6 +40,8 @@
 
 <div class="main text">
 
+	<img src="images/drake_profile_cropped.jpg" width="300px">
+
 	<p>This website is a place to put content I think might appeal to an audience larger than one.
 		Expect assorted writeups, lists of otherwise not-well-curated items, and things I’ve made for lack of anyone else creating them.</p>
 
@@ -68,7 +70,7 @@
 		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
 		const getCommits = async pageName => {
 
-			var result = await fetch('https://api.github.com/repos/etyre/elityre.com/commits?path='+ encodeURIComponent(pageName));
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
 
 			var data = await result.json();
 

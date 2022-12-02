@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 
-<head> 
+<head>
 	<title>Eli Tyre</title>
 	<link rel="stylesheet" type="text/css" href="css/main.css">
 </head>
@@ -9,34 +9,34 @@
 <body>
 
 	<nav>
-		<ul> 
+		<ul>
 			<li><a href="index.html" class="button">About</a></li>
 			<li><a href="personal-history.html" class="button">Personal History</a></li>
 			<!--<li>Writing</li>
 			<a href="conversational-faciliation.html" class="button"><li>Conversational Faciliation</li></a>
-			<a href="https://github.com/Etyre" class="button"><li>Software</li></a>
+			<a href="https://github.com/drake-thomas" class="button"><li>Software</li></a>
 			<li>Consulting and Coaching</li>-->
 			<li><a href="date-me.html" class="button">Date Me</a></li>
 			<li>Contact</li>
 		</ul>
 	</nav>
-	
+
 	<div class="page title">
 		<h1>Personal History</h1>
 	</div>
-	
-	
+
+
 <div class="main text">
 	<p>
     [to be filled in later]
   </p>
 
   <div id="last updated"></div>
-	
-	
-	
+
+
+
 	<script>
-		
+
 		// this part gets the file name from the URL.
 		var urlArray = window.location.href.split("/");
 
@@ -47,7 +47,7 @@
 		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
 		const getCommits = async pageName => {
 
-			var result = await fetch('https://api.github.com/repos/etyre/elityre.com/commits?path='+ encodeURIComponent(pageName));
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
 
 			var data = await result.json();
 
@@ -61,7 +61,7 @@
 
 			console.log(formattedDate)
 
-			
+
 
 
 			document.getElementById('last updated').innerHTML = "<p>,<br><i>This page was last updated on "+ formattedDate + ".</i></p>";
@@ -76,7 +76,7 @@
 			// const xhr = new XMLHttpRequest();
 
 			// // GitHub endpoint, dynamically passing in specified username
-			// const url = `https://api.github.com/repos/etyre/elityre.com/commits?path=date.html`;
+			// const url = `https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path=date.html`;
 			// // 'date.html' should ultimately be replaced with '${pageName}'
 
 			// // Open a new connection, using a GET request via URL endpoint
@@ -92,7 +92,7 @@
 
 			// // Log the response
 			// // console.log(data);
-				
+
 			// 	let d = new Date();
 			// document.body.innerHTML = "<p>This page was last updated on "+ "[placeholder]" +d+ "</p>";
 
@@ -109,9 +109,9 @@
 			// const data = await getCommits('test');
 			// Make some notes about Await and what it does.
 			// Note that you can only use await inside of an async function.
-			
+
 			getCommits(nameOfThisPage);
-			
+
 		</script>
 
 </div>
