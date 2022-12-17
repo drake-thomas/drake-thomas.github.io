@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Mistakes</h1>
+	</div>
+
+
+<div class="main text">
+
+	<p>I am often wrong about things! I'd like to notice this happening more, so I'm tracking
+		the more important instances here in the interests of having a better record and transmitting
+		any things I've learned to readers of this page.
+	</p>
+	<p>
+	Where I can recall the source that led me to correct my opinions, I've tried to cite them, though I make no guarantees that my second-hand transmission of the things they pointed out will be fully accurate or endorsed by the original speakers.
+	</p>
+	<p>
+	I started this page in mid-December 2022; entries from before then are sparser and fuzzily recalled.
+	</p>
+
+
+
+	<ul>
+		<li>[2022-12-16] I had often made analogies between interpretability work in AI and fields of science like biology; I now think this isn't a great analogy, because of the extent to which researching neural networks involves complete access to the internal dynamics of the system, infallible measurement, replicable causal interventions, etc. Thanks to Buck Schlegeris for pointing this out to me.</li>
+		<li>[2022-12-16] I was confused about the tradeoffs of optimization.
+			Suppose that X and Y are normally-distributed variables that are correlated, but not perfectly so.
+			I thought that if I optimized hard enough for X (say, by sampling from this distribution until I see a datapoint with an X-value over some threshold), this would eventually start trading off against the value of Y. But actually, the expected Y-value just scales linearly with the expected X-value; I drift off of the major axis of the ellipse in a scatterplot, but the slope isn't negative. Thanks to Eric Neyman for this observation.</li>
+
+		<li>[Dec 2022] Updated towards worrying more about how path-dependent human value formation is, how much something like CEV is well-defined, and whether the future will mostly contain agents working towards goals that I endorse on net. (This was a process of some conversations with assorted friends.)</li>
+	 	<li>[Early 2022] I had not really considered that perhaps I should <i>check</i> whether the AI alignment work
+		  I intellectually endorsed people working on was something I might personally want to do or be any good at.</li>
+	</ul>
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>
