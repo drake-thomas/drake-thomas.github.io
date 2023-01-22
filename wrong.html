@@ -54,6 +54,9 @@
 	<h2>Nontrivial mistakes and confusions</h2>
 	<ul>
 		<li>
+			[2023-01-17] I'd often seen arguments about superexponential GDP progress and considered them (moderately weak) evidence for the future being pretty crazy. I now think these arguments aren't as strong, because while some of the GDP growth is due to Mysterious Forces of Progress we don't understand, a good piece of it is straightforwardly from population growth, and that's started to level off in predictable ways, so we can do better forecasting than blindly extrapolating the line on the graph by accounting for a stabilizing world population over the coming decades. I now think GDP per capita is likely a better thing to plot for this sort of analysis. h/t Charlotte Siegmann for first making this point to me.
+		</li>
+		<li>
 			[2022-12-16] I had often made analogies between interpretability work in AI and fields of science like biology; I now think this isn't a great analogy, because of the extent to which researching neural networks involves complete access to the internal dynamics of the system, infallible measurement, replicable causal interventions, etc. Thanks to Buck Schlegeris for pointing this out to me.
 		</li>
 		<li>
@@ -61,16 +64,22 @@
 			Suppose that X and Y are normally-distributed variables that are correlated, but not perfectly so.
 			I thought that if I optimized hard enough for X (say, by sampling from this distribution until I see a datapoint with an X-value over some threshold), this would eventually start trading off against the value of Y. But actually, the expected Y-value just scales linearly with the expected X-value; I drift off of the major axis of the ellipse in a scatterplot, but the slope isn't negative. Thanks to Eric Neyman for this observation.
 		</li>
-		<li>[December 2022] Updated towards worrying more about how path-dependent human value formation is, how much something like CEV is well-defined, the monotonicity of human morality improvement over time, and whether the future will mostly contain agents working towards goals that I endorse on net. (This was a process of some conversations with assorted friends.)</li>
-		<li>[November 2022] I had heard some third-hand tales of poor behavior on the part of people involved in FTX, thought that I should have more skepticism and less trust of them as a result, and then observed this skepticism gradually recede over time for no good reason. In retrospect I should have maintained it.</li>
-	 	<li>[Early 2022] I had not really considered that perhaps I should <i>check</i> whether the AI alignment research
-		  I intellectually endorsed people working on was something I might personally want to do or be any good at.</li>
+		<li>
+			[December 2022] Updated towards worrying more about how path-dependent human value formation is, how much something like CEV is well-defined, the monotonicity of human morality improvement over time, and whether the future will mostly contain agents working towards goals that I endorse on net. (This was a process of some conversations with assorted friends.)
+		</li>
+		<li>
+			[November 2022] I had heard some third-hand tales of poor behavior on the part of people involved in FTX back in 2021, thought that I should have more skepticism and less trust of them as a result, and then observed this skepticism gradually recede over time for no good reason. In retrospect I should have maintained it.
+		</li>
+	 	<li>
+			[Late 2021 / Early 2022] I had not really considered that perhaps I should <i>check</i> whether the AI alignment research
+		  	I intellectually endorsed people working on was something I might personally want to do or be any good at.
+	  </li>
 	</ul>
 
 	<h2>Minor errors and misconceptions</h2>
 	<ul>
 		<li>
-			[2022-12-25] I thought that transformer language models were bottlenecked on having larger context windows because this required them to learn many more parameters, but in fact the architecture has very few parameters that scale with the context window (just the position encoding, which is a small fraction of the parameters in existing models). The bottleneck as I now understand it is that running a forward pass scales quadratically with context, so for both training and inference you have to run it for longer.
+			[2022-12-25] I thought that transformer language models were bottlenecked on having larger context windows because this required them to learn many more parameters, but in fact the architecture has very few parameters that scale with the context window (just the position encoding, which is a small fraction of the parameters in existing models and for some architectures is hard-coded). The bottleneck as I now understand it is that running a forward pass scales quadratically with context, so for both training and inference you have to run it for longer.
 		</li>
 		<li>
 			[2022] I thought that the "stochastic" in SGD (stochastic gradient descent) referred to taking steps that randomly varied from the direction of steepest gradient as measured by the loss on the most recent batch (so as to escape local minima or something). Actually this is not how SGD works, and the "stochastic" part is just in the sense that the gradient of loss on a single batch is a noisy measurement of the true gradient you would get if you computed the loss over your entire training dataset. The steps in SGD don't have random noise added on top.
