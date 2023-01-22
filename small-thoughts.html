@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Links</h1>
+	</div>
+
+
+<div class="main text">
+
+	<p>
+		Assorted observations of mine that don't merit an entire page devoted to them.
+	</p>
+
+	<ul>
+		<li>
+			Under our current understanding of physics, the modern environment in which humans have kids fairly often and the population grows over time is a very weird and unsustainable state. The number of atoms under control of humans over time is O(t<sup>3</sup>), and any exponential function will eventually outpace that. No matter the wonders you imagine in a post-Singularity future, you'll still have to pick between inevitable death and the chance to have children more than once in a bilion years. (This makes me pretty sad.)
+		</li>
+		<li>
+			Something like the Dunning-Kruger effect is actually exactly what you expect from well-calibrated individuals, if your measurement of skill is at all noisy. The people who score lowest on your test will have done so out of a combination of poor skill and poor luck, so their true skill will be higher than what you measured - it isn't surprising if their self-estimated skill is too! (One can isolate decidedly irrational behavior with more careful setups - I'm not claiming people are actually calibrated about this sort of thing - but "the worst performers at a task think themselves better at it" ought to be your default expectation and not a surprising result in and of itself.)
+		</li>
+	</ul>
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>

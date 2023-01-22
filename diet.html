@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>My approach to animal welfare</h1>
+	</div>
+
+
+<div class="main text">
+
+	I avoid consuming meat from non-fish animals that I expect were reasonably likely to have been factory farmed, and I don't buy eggs from the store if the brand is not a high-welfare one. Other than this, I mostly don't restrict my diet for animal welfare reasons.
+
+	Further notes on this approach and my reasoning for it:
+
+	<ul>
+		<li>
+			The things I exclude I do so for the standard reason: I think the conditions experienced by these animals in large factory farms are horrific, and righly regarded as moral atrocities. If I reduce the demand for such meat on the margin, I will in expectation reduce supply correspondingly (give or take elasticity considerations, etc). I feel a sort of virtue ethical duty to not be directly responsible for such suffering in my day-to-day life.
+		</li>
+		<li>
+			However, I don't think that <i>death</i> bears a large moral cost outside of the immediate associated pain, which I treat as a rounding error compared to the rest of an animal's lifespan. My model is roughly that suffering is bad to the extent that the suffering entity has the cognitive capacity to experience suffering, while death is bad to the extent that the dying entity has the cognitive capacity to have a coherent preference for their own continued survival (plus any pain upon dying, which tends to be short). I don't think most farm animals meet the latter bar, so I'm fine eating them if they led happy lives. But I would probably not eat an elephant, octopus, or chimpanzee, even if they had been humanely raised.
+		</li>
+		<li>
+			I happily purchase high-welfare eggs and meat from local farmer's markets or the meat of animals that have been hunted. These seem pretty likely to be positive-welfare lives to me, and I think it's mildly ethically good (in a sort of pro-natalist way) to incentivize more such lives. (The hunting case is complicated by wild animal welfare considerations, which I address later on.)
+		</li>
+		<li>
+			Fish is a case where I'm much less certain. My intuitions point to there being less going on qualia-wise in fish than in most birds or mammals, and I would also expect the suffering of farmed fish to be relatively minor compared to some of the things inflincted on land animals. The fact that a large fraction of fish is wild-caught affects the calculus for me too. I wouldn't be surprised if I decided to be more strict about fish consumption in the future.
+		</li>
+		<li>
+			For "weird" meat like bison or elk, I weakly guess that the smaller market means that the farming operations are substantially less industrialized or full of the horrors present in larger factory farms. I haven't looked into this enough to be fully comfortable with it, though.
+		</li>
+		<li>
+			I don't have ethical reservations about eating non-cephalopod invertebrates, but I am generally unlikely to for taste/grossness reasons. The primary exceptions are shrimp and crab, though I don't eat either very much.
+		</li>
+		<li>
+			I'm pretty uncertain about the ethical sign of factory farmed beef; my understanding is that these cows spend the majority of their lives on pasture in a pretty good state, and only in the last few weeks are they subject to poor treatment (and then still substantially better than chickens). I wouldn't be shocked to learn that my future self decided beef was OK.
+		</li>
+		<li>
+			My poorly-thought-out best guess is that there's around a 20% chance that basically no farm animals are the bearers of relevant subjective experience in a way I would endorse caring about if I were wiser and knew more about consciousness. (Some people I respect who've thought about this more than me have reached this opinion.) This mostly doesn't affect any conclusions here.
+		</li>
+		<li>
+			I remain confused about wild animal welfare. My intuitions point weakly to it being positive, on the basis of the evidence that <i>homo sapiens</i> seems to experience net positive utility across a wide range of life circumstances, but the left tail here if I'm wrong is a lot worse than the right tail, so it's not clear my expected value should be above neutral.
+		</li>
+		<li>
+			This plays into my approach to eating the meat of animals that have been hunted. The marginal effects are different here: if a population is in Malthusian equilibrium with 1000 individuals and someone hunts one, the result is a population of 999 for some fraction of the typical animal lifespan before things reach equilbrium again, so the amount of total animal experience goes slightly <i>down</i> rather than up. (If there are quotas on the number of animals hunted, things are a little different, and the effect should be closer to zero.) This means that hunting herbivores (which is most hunted meat) will decrease total wild animal suffering and total wild animal happiness; given the asymmetry in the sort of virtues I want to cultivate, I'm fine reducing the number of happy animals in a way I would be less fine with increasing the number of suffering wild animals. But all of this is kind of complicated and may well be dominated by effects I haven't considered here.
+		</li>
+		<li>
+			If I purchase one kind of food, this in expectation slightly increases the price of that food item, which pushes marginal consumers into the purchase of substitute goods. For example, if I buy more fish, that might lead other consumers to purchase more chicken. This sort of reasoning would suggesting looking deeply into the substitution effects of different foodstuffs, elasticity of supply and demand of the relevant goods, and getting my protein from whichever source had the least final impact on chicken purchases. I basically don't think about this effect in my dietary choices at all; this is mainly because it seems really complicated to work out, I expect the effects to be pretty second-order, and my inner virtue ethical moral compass doesn't have the economic sophistication to end up feeling all that guilty about this sort of thing.
+		</li>
+		<li>
+			I'm not especially thinking about these things from a consequentialist lens of "if eating slightly more convenient meat increases my productivity by 0.1%, the expected effects on humanity's long-term future outweigh the local consequences". I don't think such reasoning is good for the soul, and I have a non-consequentialist sort of inclination to live a life that would seem robustly good under many ethical codes (not just the fairly weird one I think is best). I also just expect that in practice, disregarding normal morality for galaxy-brained reasons will go poorly and lead to my being a worse person in general.
+		</li>
+	</ul>
+
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Honesty</h1>
+	</div>
+
+
+<div class="main text">
+
+	<h2>My honesty policy</h2>
+	<p>
+		I try fairly hard to be honest in my interactions with others. In particular I aspire to follow something like the <a href = "https://www.lesswrong.com/posts/xdwbX9pFEr7Pomaxv/meta-honesty-firming-up-honesty-around-its-edge-cases">code of meta-honesty</a> described by Eliezer Yudkowsky. This means that I sometimes glomarize about various questions to protect my counterfactual selves.
+	</p>
+
+	<p>
+		To give a better sense of when I would or wouldn't lie, here are some scenarios and how I expect to react to them.
+	</p>
+	<h2>Examples</h2>
+	<ul>
+		<li>
+			I will check boxes labeled "I have read the terms and conditions" when I have not done so.
+		</li>
+		<li>
+			In bureacratic scripted interactions, I have a pretty strong baseline inclination to tell the truth (especially if it's in a context where I expect my literal words to be believed), but not an infinitely strong one. I might falsely describe my situation as something simpler than it is to avoid going into unnecessary detail, for instance. In 2022, I considered lying to get a prescription for Paxlovid without currently being sick myself so that I could have the medicine available on short notice, but ended up not doing so for reasons of maintaining honesty.
+		</li>
+		<li>
+			If a waiter asks me how I liked the food at a restaurant where I in fact disliked it, I'll try to avoid having to say any false statements while expressing positive sentiment, but if I'm not fast enough on my verbal feet I will probably lie and then feel guilty about doing so.
+		</li>
+		<li>
+			If someone asks how I'm doing and my day is actually going pretty poorly, I might say something like "eh, today's been rather mediocre but I'm looking forward to [event in the future]". In particular I very likely wouldn't say "great!", though I might give a "fine" or "alright" if the day was still above 4/10 valence overall.
+		</li>
+		<li>
+			If someone says "nice to meet you" and I didn't actually find it nice to meet them, there's a good chance I will unthinkingly say "likewise" and then feel guilty about having done so.
+		</li>
+		<li>
+			If someone I know (rather than a stranger) asks me a contentful question where they're curious about my answer and I stop to think before responding, I will basically always be doing an honest report of my beliefs, give or take selective reporting of which truths to emit or how to phrase things. I can't remember the last time I lied to someone I knew who was actually trying to learn a fact about the world by asking me a question when I had more than 3 seconds to think before giving a response. (I think at the least this happened in high school but I can't generate examples in the last 5 years.)
+		</li>
+		<li>
+			If someone asks me over text about some question or wants to confirm the accuracy of something I've said, I'm even more likely to tell the truth because I'll have more time to think about my response and be much less subject to cached responses and in-person social pressures. I'll also be able to spend more time thinking about my glomarization obligations and what constraints I'm under.
+		</li>
+	</ul>
+
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>
