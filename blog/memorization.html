@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="/css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Spaced Repetition</h1>
+	</div>
+
+
+<div class="main text">
+
+	<h2>Introduction / TLDR</h2>
+	<p>
+		I use spaced repetition systems (specifically Anki) for a variety of purposes, and they form a fairly core part of my intellectual environment. Unlike every other such person on the internet, though, I don't think you should obviously use them - if you're like me you probably should, but for many people it might be a bad call! The rest of this page dives into what I see as the pros and cons, and less standard use cases for spaced repetition that I've found helpful.
+	</p>
+
+	<h2>What is this thing?</h2>
+
+	<p>
+		Spaced repetition software, or SRS, refers to any of a variety of applications for creating flashcard-adjacent content and reviewing these cards over longer and longer intervals as you get to know them better. My impression of the scientific literature is that this is pretty reliably shown to be the best way to establish long-term recall of a body of knowledge, and my ancedotal experience is that it works quite well.
+	</p>
+
+	<p>
+		For more information about spaced repetition, <a href = "https://www.gwern.net/Spaced-repetition">gwern's page</a> provides a great overview.
+	</p>
+
+	<h2>Should I use it?</h2>
+
+	<p>
+		To a first approximation, spaced repetition is useful to the extent you want to memorize a lot of things. I delight in adding new facts and skills and general knowledge into my brain, and so I have thousands of flashcards in my Anki deck (and hundreds more on my list of "things I should add to my Anki deck sometime soon").
+	</p>
+	<p>
+		If you already think you want to memorize a lot of things, you may need no further convincing. If you already know you hate memorizing things, feel free to close this tab. But I claim that many people haven't really considered the space of things they might be able to usefully add to their memory if they had good tools for doing so, so I'd like to list some different flavors of memorization one might try deploying SRS for. See which of them strike your fancy.
+	</p>
+
+	<h2>What could I use this for?</h2>
+
+	<p>
+		Listed roughly from most to least orthodox:
+	</p>
+	<ul>
+		<li>
+			<b>Normal stuff:</b> locations of countries in the world, elements of the periodic table, digits of pi, state capitals, vocabulary for a foreign language, etc. The central examples of "stuff people delibrately memorize". Many of these things have real value, many of them just appeal to the sort of person who likes checking off this flavor of accomplishment.
+		</li>
+		<li>
+			<b>Retaining things you've studied:</b> I used to have flashcards cached as "that thing students more diligent than me do instead of cramming when they want to do well on the test". When you want <i>more</i> than to do well on the test, when you want to actually have the contents of that chemistry class or linguistics seminar or whatever to stick around in your brain for the rest of your life, you can distill its contents into flashcards for your SRS deck and never forget it again. (Spaced repetition works well for the test-prep thing too if you want to delete all the cards after, but it's not the way I orient to my cards.)
+		</li>
+		<li>
+			<b>Random facts:</b>
+		</li>
+	</ul>
+
+	<h2>I'm sold, what are some tips for how to use this well?</h2>
+
+	<p>
+		I'll plug <a href = "https://www.gwern.net/Spaced-repetition">gwern's page</a> yet again for a great go-to reference on a lot of this stuff, but some particular tips I wish I'd had earlier:
+	</p>
+	<ul>
+		<li>
+			Anki is probably the way to go, if you're unsure which system to use. I started out with Mnemosyne, which I now regret; while its tagging and browsing features are a little more to my liking, the lack of an iOS mobile app and more clunky bits of the UI were fairly costly. I ended up switching over all of my cards in early 2022, which took a fair bit of energy to get sorted out. (I have heard some people extol the virtues of SuperMemo but haven't tried it myself. Empirically its advocates are more fanatical about their evangelism - I won't speculate about the causality there.)
+		</li>
+		<li>
+			I recommend having all your cards in a single deck, rather than segregating by topic; I find it more enjoyable if my reviews span a variety of subject matters, and you can use the tagging system to bucket your cards as finely as you want anyway.
+		</li>
+		<li>
+			Related to the above, I enjoy reviewing my cards more if there are a variety of topics I get to engage with: if I have one hundred facts about Git to learn and nothing else, I will feel pretty meh about it, but if one moment I'm locating Afghanistan on a map and the next I'm answering a question about tidal forces and the next I'm reciting poetry and the next I'm thinking about constellations, the experience is more enjoyable.
+		</li>
+		<li>
+			Many people before me have opined on the proper methodology for making good flashcards: see [TODO]. The core principles are to make the mental motion from card to answer as atomic as possible, and to prompt yourself with the sort of context you actually want to be able to remember the thing in.
+		</li>
+		<li>
+			Cloze deletion cards are pretty great for a lot of purposes; they're especially nice for turning relatively little card-creation work into a lot of relevant flashcards that are bite-sized in the right way (instead of a bunch of duplicated work rewriting custom cards, or a single massive card that requires loading ten things in your head). Image occlusion cards (see the <a href="">Anki extension</a> TODO ADD A LINK) are also really great when you have diagrams or maps or something.
+		</li>
+	</ul>
+
+
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>
