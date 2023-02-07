@@ -25,6 +25,9 @@ nav ul li, footer ul li {
 nav ul a, footer ul a {
     color: #b00;
 }
+nav ul a:hover, footer ul a:hover {
+    color: #800;
+}
 a {
     text-decoration: none;
     color: #d35;
