@@ -2,7 +2,7 @@
 
 body {
     background-color: #333;
-    color: #fff;
+    color: #eee;
     font-family:'Calibri';
     margin: 60px auto;
     width: 60%;
@@ -22,7 +22,7 @@ nav ul li, footer ul li {
 }
 a {
     text-decoration: none;
-    color: #449;
+    color: #88f;
 }
 a:hover {
     text-decoration: underline;
@@ -35,7 +35,6 @@ h1 {
 p {
     font-size: 1.2em;
     line-height: 1.3em;
-    color: #fff;
 
 }
 .footnote {
@@ -76,7 +75,7 @@ blockquote::before {
     left: 0;
     width: 4px;
     height: 100%;
-    background-color: #ccc;
+    background-color: #555;
 }
 
 
