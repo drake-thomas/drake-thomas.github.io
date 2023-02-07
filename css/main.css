@@ -15,11 +15,13 @@ nav ul, footer ul {
     padding: 0px;
     list-style: none;
     font-weight: bold;
-    color: #b00;
 }
 nav ul li, footer ul li {
     display: inline;
     margin-right: 20px;
+}
+nav ul a, footer ul a {
+    color: #b00;
 }
 a {
     text-decoration: none;
