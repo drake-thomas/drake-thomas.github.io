@@ -4,6 +4,9 @@ body {
     font-family:'Calibri';
     margin: 60px auto;
     width: 60%;
+    
+    font-size: 1.2em;
+    line-height: 1.3em;
 
 }
 nav ul, footer ul {
@@ -27,9 +30,10 @@ h1 {
     font-size: 3em;
     font-family:'Calibri', 'Arial', 'Sans-Serif';
 }
+
 p {
-    font-size: 1.4em;
-    line-height: 1.5em;
+    font-size: 1.2em;
+    line-height: 1.3em;
     color: #333;
 
 }
