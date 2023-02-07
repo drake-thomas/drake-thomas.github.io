@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Orthogonal Content</h1>
+	</div>
+
+
+<div class="main text">
+
+	<h2>My favorite orthogonal content</h2>
+	<p>
+		Many of the things I think are most useful or insightful or helpful for me to have read are from the broader rationality and effective altruism communities - posts on Slate Star Codex, LessWrong essays, EA Forum posts, et cetera. (Or, on the recreational side, works of <a href = "https://www.reddit.com/r/rational/">rational fiction</a> or <a href="https://www.projectlawful.com/posts/6322">glowfic</a>.)
+	</p>
+
+	<p>
+		If you aren't familiar with this particular sphere of the interest, I highly recommend it! Ignore this post and read the Sequences, or <a href = "https://slatestarcodex.com/top-posts/">the top posts of SSC</a>, or <a href="https://www.hpmor.com/chapter/1">HPMOR</a>, or <a href = "https://gwern.net/About">other</a> <a href = "https://blog.jaibot.com/500-million-but-not-a-single-one-more/">classic</a> <a href="https://thingofthings.wordpress.com/2015/01/28/cis-by-default/">blog</a> posts.
+	</p>
+	<p>
+		But I expect that many readers of this page will already be swimming in more than enough such content. As such, I'm using this page to make a list of everything I quite like that seems relatively unknown within my ingroup - the things with the largest residuals after I subtract out the primary PCA component of "rationalist-adjacent".
+	</p>
+	<p>
+		In the interests of keeping this list short, I've applied a fairly high bar or restricted to things that I think a good fraction of people would enjoy. (As of February 2023, this list is bottlenecked not on my discovery of interesting content but on my getting around to putting more items in it.)
+	</p>
+	<h2>Things Drake Likes</h2>
+	<ul>
+		<li>
+			Terence Tao <a href ="https://terrytao.wordpress.com/career-advice/theres-more-to-mathematics-than-rigour-and-proofs/">on the "post-rigorous" stage of mathematics</a>
+		</li>
+		<li>
+			<a href="https://www.youtube.com/channel/UC9_p50tH3WmMslWRWKnM7dQ">Adam Ragusea</a> creates one of my favorite cooking channels on youtube: cares about directness and optimizing for the values of real people cooking and doing empiricism.
+		</li>
+		<li>
+			CS Lewis: <a href="https://www.lewissociety.org/innerring/">The Inner Ring</a>. Fairly well known, but worth a reread IMO even if you've seen it before.
+		</li>
+		<li>
+			<a href="http://zesty.ca/voting/sim/">Voting simulation visualizations</a> by Ka-Ping Yee and an <a href="http://zesty.ca/voting/voteline/">interactive one-dimensional visualization</a>. I found this really informative, and it updated me away from IRV/Hare/RCV as a voting system. See also <a href="https://rangevoting.org/IEVS/Pictures.html">these graphs</a> from rangevoting.org that explore even more scenarios with the same methodology and consider some interesting cases like candidate cloning, though as indicated by the URL the source comes at things with a bias.
+		</li>
+	</ul>
+
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>
