@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Good things</h1>
+	</div>
+
+
+<div class="main text">
+
+	<p>
+		Purchases, habits, and miscellaneous tricks you might want to adopt.
+	</p>
+
+	<p>
+		Other people's writings in this vein: <a href="https://putanumonit.com/2019/12/30/100-ways-to-live-better/">100 ways to live better</a> (Jacob Falkovich), <a href="https://www.lesswrong.com/posts/7hFeMWC6Y5eaSixbD/100-tips-for-a-better-life">100 tips for a better life</a> (Ideopunk), SSC product recommendations (<a href="https://slatestarcodex.com/2014/11/30/cyber-monday-product-recommendations/">2014</a>, <a href="https://slatestarcodex.com/2015/12/03/product-recommendations-2015/)">2015</a>), <a href="https://nintil.com/2019/05/19/stuff-i-own-and-use/">Stuff I Own and Use</a> (Nintil), <a href="https://markxu.com/things">Favorite Things</a> (Mark Xu)
+	</p>
+
+	<h2>Things to Buy</h2>
+	<ul>
+		<li>
+			If you bake at home, get some <a href="https://www.amazon.com/Disposable-Thicker-Plastic-Elastic-Portable/dp/B07VXPM8RJ">disposable shower caps</a>: they're an extremely cheap reusable way to cover many sizes of bowl and see how the dough's doing inside.
+		</li>
+		<li>
+			A high-quality cordless vacuum becomes convenient enough to use that you start actually using it even when guests aren't coming over - it's one of the household items I'm most happy to have shelled out extra money for. (We have a <a href="https://www.dyson.com/vacuum-cleaners/cordless/v10/absolute-nickel-copper">Dyson V10 Cyclone Absolute</a>.)
+		</li>
+		<li>
+			Extremely comfortable furniture, like the maximally-soft-and-cozy <a href="https://www.homedepot.com/p/Home-Decorators-Collection-Ethereal-Shag-Grey-7-ft-x-10-ft-Indoor-Area-Rug-447120/205684834">Home Depot Ethereal Shag Rug</a> (eternal glory to Duncan Sabien for discovering this one) or <a href="https://www.target.com/p/king-microplush-bed-blanket-black-threshold-8482/-/A-78421260">very soft blankets</a> (not making claims to optimality for this one, it's just pretty cheap and good).
+			</br></br>
+			I also love <a href="https://www.worldmarket.com/product/rattan+double+papasan+chair+frame.do">this chair frame</a> from World Market combined with <a href="https://www.worldmarket.com/product/elora-speckled-oatmeal-double-papasan-chair-cushion.do">this cushion</a> (it just wraps you up like a burrito), but it takes up a lot of floorspace and is extremely inconvenient to order because availability is spotty and they refuse to deliver.
+		</li>
+		<li>
+			<a href="https://store.dandelionchocolate.com/#Chocolate-Bars">Dandelion Chocolate</a> makes interesting and reliably tasty high-quality chocolate bars that taste shockingly different from ordinary chocolate or each other. Makes a good gift choice, too.
+		</li>
+		<li>
+			A small bottle of <a href="https://www.amazon.com/Nonna-Pias-Classic-Balsamic-Glaze/dp/B06X9V7YWF/">balsamic glaze</a> lasts forever and is a great way to brighten up foods for which a little extra acidity and sweetness would help. I drizzle it over ice cream, add as a garnish on pasta dishes, and apply to pizzas that don't have enough tomato sauce to bring the necessary sweetness + acidity.
+		</li>
+		<li>
+			I'm not usually one for cute bodycare products, but shampoo bars last a shockingly long time, smell nice, and don't require me to fumble with the plastic top of a precarious bottle. (They lather way more than you'd naively expect.) I like <a href="https://www.lushusa.com/hair/shampoo-bars/jumping-juniper/9999905126.html">these</a> <a href="https://www.lushusa.com/hair/shampoo-bars/montalbano/9999905127.html">two</a> from Lush but I haven't sampled very many.
+		</li>
+	</ul>
+	<h2>Things to Do</h2>
+	<ul>
+		<li>
+			Download <a href="https://chrome.google.com/webstore/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm">an adblocker</a>.
+		</li>
+		<li>
+			If you don't like it when apps coerce your perfectly good ASCII emoticons into distorted cartoon faces, you can set up text replacements to convert [colon, end parenthesis] to [colon, unicode zero-space character, end parenthesis].
+		</li>
+	</ul>
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>
