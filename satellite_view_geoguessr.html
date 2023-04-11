@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Random google maps links</title>
+	<link rel="stylesheet" type="text/css" href="css/main.css">
+    <script src="maps_link_generator.js"></script>
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Google maps satellite view geoguessr</h1>
+	</div>
+
+
+<div class="main text">
+	<p>
+		Lately, I've enjoyed playing the following game with myself:
+	</p>
+    <ol>
+        <li>Visit a random spot on Earth's land surface at a random angle on Google Maps satellite view, with the labels turned off</li>
+        <li>Take my best guess at the location</li>
+        <li>Zoom out</li>
+        <li>Return to step 2</li>
+    </ol>
+	<p>
+		I find it pretty fun! You discover a ton of weird features on this planet (there are so many peculiar things out there!), you can improve quickly after playing a bit, and it's great for calibrating your intuitions about how much of Earth is made of jungle, desert, urban areas, etc.
+	</p>
+	<h2>How to play</h2>
+
+    <p> First, download UBlock Origin. Then go to the settings page and add the following to your configuration file:</p>
+
+    <pre>
+        !restaurants, hotels, etc
+        www.google.com##.e2moi
+        !yellow person in the SE corner
+        www.google.com##.WzvKIe
+        !blanks out the minimap under "layers" that can otherwise give clues
+        www.google.com##.SBV6Td
+        !blanks out the imagery copyright data and provider of the imagery at the bottom, which can reveal the country of origin 
+        www.google.com##.H4v9Kb
+        !removes the little target icon in the bottom left that recenters to the user's current location
+        www.google.com##.sVuEFc
+        !the search bar
+        www.google.com##.id-omnibox-container.JLm1tf-bEDTcc-GWbSKc
+        !self-explanatory
+        www.google.com###compass
+        !left hand sidebar for wide screens: this isn't spoiler-y, just some visual clutter
+        !unfortunately adding this block doesn't seem to let the image extend to the edge of the screen
+        !and just leaves a grey bar on the side instead of a white one
+        !up to you whether you want to comment this line out
+        www.google.com##.tTVLSc.XltNde
+        !removing the settings panel and gmail account icon from the top right
+        www.google.com##[class^="gb_"]
+    </pre>
+
+	<button id="add-link-btn" onclick="addRandomLink()">Random google maps link generator</button></div>
+	</br>
+	<div id="random-link-container"></div>
+
+    <p>Once you've done that, click this button to generate some random links! When you visit them, you should squint your eyes and uncheck the "Labels" checkbox in the bottom left without looking at what they say (unfortunately I don't think adblockers can handle this automatically, though with some work a TamperMonkey script might be able to). Then you'll be good to go! You want to fullscreen the window first though, so you don't get info about the coordinates from the URL.</p>
+
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+        }
+
+        // const data = await getCommits('test');
+        // Make some notes about Await and what it does.
+        // Note that you can only use await inside of an async function.
+
+        getCommits(nameOfThisPage);
+
+	</script>
+</div>
+</body>

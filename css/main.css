@@ -35,6 +35,9 @@ a {
 a:hover {
     text-decoration: underline;
 }
+a:visited {
+    color: #a18;
+}
 h1 {
     font-size: 3em;
     font-family:'Calibri', 'Arial', 'Sans-Serif';
