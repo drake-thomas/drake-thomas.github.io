@@ -42,6 +42,9 @@ a:hover {
 a:visited {
     color: #a18;
 }
+nav ul a:visited{
+    color: #b00;
+}
 
 
 
