@@ -28,9 +28,6 @@ nav ul a, footer ul a {
 nav ul a:hover, footer ul a:hover {
     color: #800;
 }
-nav ul a:visited{
-    color: #b00;
-}
 a {
     text-decoration: none;
     color: #d35;
