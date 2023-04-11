@@ -28,6 +28,9 @@ nav ul a, footer ul a {
 nav ul a:hover, footer ul a:hover {
     color: #800;
 }
+nav ul a:visited{
+    color: #b00;
+}
 a {
     text-decoration: none;
     color: #d35;
@@ -35,10 +38,13 @@ a {
 a:hover {
     text-decoration: underline;
 }
-/* purple links for visited pages, but not in the nav bar because that looks weird */
-a:not(.nav):visited {
+/* purple links for visited pages, but above code will mean we ignore it for anything in the nav bar */
+a:visited {
     color: #a18;
 }
+
+
+
 h1 {
     font-size: 3em;
     font-family:'Calibri', 'Arial', 'Sans-Serif';
