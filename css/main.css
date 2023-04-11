@@ -36,7 +36,7 @@ a:hover {
     text-decoration: underline;
 }
 /* purple links for visited pages, but not in the nav bar because that looks weird */
-a:not(.nav-placeholder):visited {
+a:not(.nav):visited {
     color: #a18;
 }
 h1 {
