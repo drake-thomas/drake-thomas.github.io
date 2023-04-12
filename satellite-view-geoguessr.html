@@ -54,7 +54,7 @@
 	</p>
 	<h2>How to play</h2>
 
-    <p> First, download UBlock Origin (<a href="https://chrome.google.com/webstore/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm?hl=en">Chrome</a>, <a href="https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/">Firefox</a>). Then go to <a href="chrome-extension://cjpalhdlnbpafiamejdnhcphjbkeiagm/dashboard.html#1p-filters.html">My Filters</a> on the settings page and add the following to your configuration file:</p>
+    <p> First, download UBlock Origin (<a href="https://chrome.google.com/webstore/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm?hl=en">Chrome</a>, <a href="https://addons.mozilla.org/en-US/firefox/addon/ublock-origin/">Firefox</a>). Then go to <a href="chrome-extension://cjpalhdlnbpafiamejdnhcphjbkeiagm/dashboard.html#1p-filters.html">My Filters</a> (<a href="moz-extension://60c379c6-99a5-43b7-afaf-15b53929c9f6/dashboard.html#1p-filters.html">Firefox link</a>) on the settings page and add the following to your configuration file:</p>
 
     <pre>
 !restaurants, hotels, etc
@@ -82,9 +82,11 @@ www.google.com##[class^="gb_"]
 
 	<p>(UBlock origin is toggleable per-site, so you can just turn these blocks off by hitting the extension's power button when you want to go back to regular Google Maps usage without affecting anything else.)</p>
 
+	<center>
 	<button id="add-link-btn" onclick="addRandomLink()">Random google maps link generator</button></div>
 	</br>
 	<div id="random-link-container"></div>
+	</center>
 
     <p>Once you've done that, click this button to generate some random links! When you visit them, you should squint your eyes and uncheck the "Labels" checkbox in the bottom left without looking at what they say (unfortunately I don't think adblockers can handle this automatically, though with some work a TamperMonkey script might be able to). Then you'll be good to go! You want to fullscreen the window first though, so you don't get info about the coordinates from the URL.</p>
 
