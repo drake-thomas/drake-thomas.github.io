@@ -54,6 +54,15 @@
 	<h2>Nontrivial mistakes and confusions</h2>
 	<ul>
 		<li>
+			[2023-04] I was still confused about the tradeoffs of optimization! Unlike the situation in the 2022-12-16 bullet point, there are joint X/Y distributions for which more extreme X-optimization produces less Y, if for instance X is modeled as Y plus an independent error term that is heavy-tailed and with heavier tails than Y. Intuition and exposition of this phenomenon is at <a href="https://www.lesswrong.com/posts/nnDTgmzRrzDMiPF9B/how-much-do-you-believe-your-results">this post</a> of Eric Neyman's, and Thomas Kwa and I worked out some math on when this behavior manifests <a href="https://www.lesswrong.com/posts/fuSaKr6t6Zuh6GKaQ/when-is-goodhart-catastrophic">here</a>. Thanks to Thomas Kwa for bringing my attention to this mathematical model and working with me on piecing together its subtleties. My take on this situation is now "things are kind of subtle and complicated and you have to just actually think about the precise situation at hand; no pithy slogans apply."
+		</li>
+		<li>
+			[2023-03-01] Joe Carlsmith's essay <a href="https://joecarlsmith.com/2022/01/30/on-infinite-ethics">on infinite ethics</a> clarified an issue about choice of moral "location" that I hadn't clarified for myself before.
+		</li>
+		<li>
+			[2023-02] I now think that the Center for Effective Altruism is taking substantially more reasonable actions given the constraints they are operating under than e.g. many critics on the EA forum do. (This was a result of some reflection and talking with friends who had more context on )
+		</li>
+		<li>
 			[2023-01] Updated in favor of "doom circles" being a social technology to be pretty cautious of, and one that has risky failure modes if not run by someone well aware of them and planning for how to avoid them. I am now inclined not to join cavalier doom circles in a way I wasn't before. (This was from a combination of direct experience and conversations with friends.)
 		</li>
 		<li>
@@ -81,6 +90,9 @@
 
 	<h2>Minor errors and misconceptions</h2>
 	<ul>
+		<li>
+			[2023-08] I hadn't realized that urine is just filtered blood? In retrospect, I knew the kidneys were involved in urine production and in blood filtration, and didn't have any beliefs about a pipeline out of the human stomach to siphon away liquid, so it seems sort of obvious in retrospect, but I'd never thought about it before.
+		</li>
 		<li>
 			[2022-12-25] I thought that transformer language models were bottlenecked on having larger context windows because this required them to learn many more parameters, but in fact the architecture has very few parameters that scale with the context window (just the position encoding, which is a small fraction of the parameters in existing models and for some architectures is hard-coded). The bottleneck as I now understand it is that running a forward pass scales quadratically with context, so for both training and inference you have to run it for longer.
 		</li>
