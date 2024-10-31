@@ -80,6 +80,10 @@ ul li {
     font-size: 1.2em;
     line-height: 1.3em;
 }
+ol li {
+    font-size: 1.2em;
+    line-height: 1.3em;
+}
 blockquote {
     position: relative;
     margin: 20px;
