@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+
+<head>
+	<title>Drake Thomas</title>
+	<link rel="stylesheet" type="text/css" href="../css/main.css">
+	<script src="https://code.jquery.com/jquery-1.10.2.js"></script>
+
+
+	<!-- Global site tag (gtag.js) - Google Analytics -->
+	<!--
+	Omitting this because it's sending analytics to Eli's page
+	<script async src="https://www.googletagmanager.com/gtag/js?id=UA-205493387-1"></script>
+	<script>
+  	 window.dataLayer = window.dataLayer || [];
+  	 function gtag(){dataLayer.push(arguments);}
+  	 gtag('js', new Date());
+
+  	 gtag('config', 'UA-205493387-1');
+	</script>
+	-->
+
+
+</head>
+
+
+<body>
+	<!--Navigation bar-->
+	<div id="nav-placeholder">
+	</div>
+	<!--This /\ is where the Nav bar goes on the page.
+	this \/ is the code that goes and gets the nav bar content from nav.html-->
+	<script>
+	$(function(){
+	  $("#nav-placeholder").load("../nav.html");
+	});
+	</script>
+	<!--end of Navigation bar-->
+
+	<div class="page title">
+		<h1>Constructing the Paley biplane from the icosahedron</h1>
+	</div>
+
+
+<div class="main text">
+
+
+    A <i>biplane</i> is a mathematical structure in which we have some points, and some "lines" (which we'll just think of as subsets of the points – they don't need to be realized as a set of actual lines in Euclidean space), such that we have the following properties:
+
+    <ul>
+		<li>Every two lines intersect in exactly two points.</li>
+		<li>Through every two points there are exactly two lines.</li>
+		<li>Every line has the same number of points.</li>
+		<li>Every point is on the same number of lines.</li>
+	</ul>
+
+    (You can derive some of these properties from the other ones; this isn't a minimal definition.) If you know what a <a href="https://en.wikipedia.org/wiki/Projective_plane">projective plane</a> is, this is sort of a doubled version of that. 
+
+    The small finite biplanes are trivial or built out of more familiar structures (it turns out that they always have a number of points 1 more than a triangular number):
+
+    <ul>
+		<li>On two points, we can just take two lines each of which contain both points.</li>
+		<li>On four points, we can take our points to be the vertices of a tetrahedron, and our lines to be its faces</li>
+		<li>On seven points, we can take a Fano plane, but use line complements (of size four) instead of lines.</li>
+	</ul>
+    
+    But the unique biplane on eleven points, called the Paley biplane, is a new creature – we can't trivially describe it in terms of well-known objects. It turns out that this biplane turns up in a number of interesting places in mathematics!
+
+    <ul>
+		<li>Its symmetries (the group of permutations on the points which preserve the set of lines) are those of one of the small finite simple groups, PSL2(11).</li>
+		<li>It can be used in a very natural way to construct the Golay code, a sporadic and beautiful object in 24 dimensions related to the Leech lattice.</li>
+		<li>It describes how to place a regular 11-simplex into an 11-cube: for each line, take the points in Z^11 which have a 1 in every coordinate where the corresponding line passes through a point, and add in the point (1,1,1,1,1,1,1,1,1,1,1). It's easy to check that this works, assuming such a biplane really exists. (You'll first have to convince yourself that any such biplane should have lines of size 5.)</li>
+        <li>It is the central combinatorial structure in the largest of a particular instance of triality and the ADE classification - an analogy that links the three symmetry groups of Platonic solids (tetrahedron, octahedron/cube, icosahedron/dodecahedron) with the primes 5, 7, and 11  (and some Riemann surfaces, and much more besides - see <a href="http://www.neverendingbooks.org/DATA/biplanesingerman.pdf">this paper</a> for more). It's this last item that we'll catch a glimpse of in this post.</li>
+	</ul>
+
+    The usual way people construct this object is to say "let our points be the integers mod 11, then take our lines to be cyclic shifts of the quadratic residues mod 11." That is, we look at the 5 possible values of a square mod 11: (0,1,4,5,9). Then we just shift that over: (1,2,5,6,10), then (0,2,3,6,7), then (1,3,4,7,8), and so on. It turns out any pair of these intersect in exactly two points. 
+
+    This is a perfectly fine construction - it shows us how to build the object, and lets us see that it has some 11-fold symmetry - but it's not the whole story. Somehow the thing we've built here has a whole extra factor of 60 worth of symmetry, isomorphic to A5! Where's that coming from? That's what we'll see here.
+
+    <h2>Building Paley from the icosahedron</h2>
+
+    So, we know that the A5 symmetries of the icosahedron are lurking somewhere inside the Paley biplane. Where might they be? Well, we know from the previous construction that this thing is transitive on its points, so we know that the symmetries which fix one point will be a factor of 11 smaller, and have order 60. So maybe if we pick one "special" point, we can do something with the remaining 10 that has icosahedral symmetry.
+
+    Where does 10 show up in the dodecahedron? Well, it has 20 vertices, and they come in antipodal pairs, so the 10 polar axes of the dodecahedron seem like a good place to start.
+    
+    [image: axis of a dodecahedron]
+    
+    Now we're looking for 11 kinds of objects: 5 of them will contain our "central" distinguished point, leaving 4 axes to go around, and 6 of them won't, giving us 5 axes to distribute somehow. You may wish to pause at this point and think about what natural choices here could be.
+
+    The 5-axis case is probably the easiest: what do we have 
+
+    <h3>Shadows of the 11-cell</h3>
+
+    The previous construction is fairly simple and elementary, which is nice, but if we're willing to venture a little further into the weird and obscure, we can find an even more elegant presentation of the Paley biplane.
+
+    The 11-cell is [...]
+
+
+	<div id="last-updated"></div>
+
+
+
+	<script>
+
+		// this part gets the file name from the URL.
+		var urlArray = window.location.href.split("/");
+
+		var nameOfThisPage = urlArray[urlArray.length-1];
+
+		// this part uses the github API to get the last commit data for that file, and then writes a line the HTML body.
+
+		// future Eli, this is a function. It is in Arrow syntax. You should learn this.
+		const getCommits = async pageName => {
+
+			var result = await fetch('https://api.github.com/repos/drake-thomas/drake-thomas.github.io/commits?path='+ encodeURIComponent(pageName));
+
+			var data = await result.json();
+
+			var timestamp = new Date(data[0].commit.author.date)
+			// the Date function takes a date string, and returns a date object.
+
+			//var month = timestamp.getMonth()
+
+
+			var formattedDate = timestamp.toDateString()
+
+			console.log(formattedDate)
+
+
+
+
+			document.getElementById('last-updated').innerHTML = "<p><br><i>This page was last updated on "+ formattedDate + ".</i></p>";
+
+
+			}
+
+			// const data = await getCommits('test');
+			// Make some notes about Await and what it does.
+			// Note that you can only use await inside of an async function.
+
+			getCommits(nameOfThisPage);
+
+		</script>
+	</div>
+</body>
