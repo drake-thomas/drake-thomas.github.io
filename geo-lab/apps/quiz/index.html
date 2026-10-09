@@ -110,13 +110,7 @@ const DECKS = {
     filter: f => f.src === 'craters' && f.category === 'impact-crater',
     // new cards come in random order, nudged so obvious craters tend to come first
     introKey: (f, r) => r + visRank(f) * 0.6,
-    distractorPool: (f, all) => {
-      const others = all.filter(x => x.src === 'craters' && x.id !== f.id);
-      const look = others.filter(x => x.crater_lookalike);
-      const craters = others.filter(x => !x.crater_lookalike);
-      const near = craters.filter(x => x.region === f.region);
-      return [...shuffle(near).slice(0, 2), ...shuffle(look).slice(0, Math.random() < 0.35 ? 1 : 0), ...shuffle(craters)];
-    },
+    pool: (f, all) => all.filter(x => x.src === 'craters'),  // includes the circular lookalikes
     facts: f => [f.crater?.diameter_km && `⌀ ${f.crater.diameter_km} km`, f.crater?.age_ma != null && `${fmtAge(f.crater.age_ma)}`, f.country, f.crater?.visibility],
     tiers: null,
   },
@@ -128,16 +122,57 @@ const DECKS = {
     marker: 'pin', markLabel: 'pinned', alwaysMark: true,
     filter: f => f.src === 'lakes' && f.lake?.rank,
     introKey: (f, r) => r,  // random order within the chosen size tier
-    distractorPool: (f, all) => {
-      const others = all.filter(x => x.src === 'lakes' && x.id !== f.id && x.lake?.rank);
-      const close = others.filter(x => Math.abs(x.lake.rank - f.lake.rank) <= 25);
-      const sameRegion = close.filter(x => x.region === f.region);
-      return [...shuffle(sameRegion).slice(0, 2), ...shuffle(close), ...shuffle(others)];
-    },
+    pool: (f, all) => all.filter(x => x.src === 'lakes' && x.lake?.rank),
+    similarity: (f, x) => 1 - Math.min(1, Math.abs(x.lake.rank - f.lake.rank) / 60),  // similar size rank
     facts: f => [f.lake?.area_km2 && `${Math.round(f.lake.area_km2).toLocaleString()} km²`, f.lake?.rank && `#${f.lake.rank} by area`, f.lake?.kind, f.country],
     tiers: [20, 50, 100, 150],
   },
 };
+// ---------- distractors ----------
+// Wrong answers should look like the right one, so the options don't give it away:
+// the same naming style (no "Lake X" options for a dry crater; reservoirs against reservoirs),
+// the same language feel (Nordic names with Nordic names, "Lac ..." with "Lac ..."), the same
+// region, and a similar size.
+const LANG = {
+  Finland: 'nordic', Sweden: 'nordic', Norway: 'nordic', Denmark: 'nordic', Iceland: 'nordic', Estonia: 'nordic',
+  Germany: 'germanic', Austria: 'germanic', Switzerland: 'germanic', Netherlands: 'germanic',
+  'United States': 'anglo', Australia: 'anglo', Canada: 'anglo', 'United Kingdom': 'anglo', 'New Zealand': 'anglo',
+  France: 'franco', Belgium: 'franco',
+  Brazil: 'ibero', Mexico: 'ibero', Argentina: 'ibero', Chile: 'ibero', Bolivia: 'ibero', Peru: 'ibero', Spain: 'ibero',
+  Portugal: 'ibero', Venezuela: 'ibero', Colombia: 'ibero', Paraguay: 'ibero', Uruguay: 'ibero', Ecuador: 'ibero',
+  Russia: 'post-soviet', Kazakhstan: 'post-soviet', Tajikistan: 'post-soviet', Ukraine: 'post-soviet', Uzbekistan: 'post-soviet',
+  Kyrgyzstan: 'post-soviet', Turkmenistan: 'post-soviet', Mongolia: 'post-soviet', Azerbaijan: 'post-soviet', Belarus: 'post-soviet',
+  Libya: 'saharan', Chad: 'saharan', Algeria: 'saharan', Mauritania: 'saharan', 'Saudi Arabia': 'saharan', Egypt: 'saharan',
+  Morocco: 'saharan', Niger: 'saharan', Tunisia: 'saharan', Mali: 'saharan', Sudan: 'saharan', Iran: 'saharan', Iraq: 'saharan',
+  China: 'east-asian', 'South Korea': 'east-asian', Japan: 'east-asian', 'North Korea': 'east-asian',
+};
+const langOf = f => {
+  const n = f.name;
+  if (/^(Lac|Lacs)\b/.test(n)) return 'franco';
+  if (/[åäöø]|järvi|jarvi|fjärden|sjön|vatn/i.test(n)) return 'nordic';
+  return LANG[f.country] || f.region || 'other';
+};
+const styleOf = f => {
+  const n = f.name.toLowerCase();
+  if (/reservoir|\bdam\b|embalse|represa|vodokhranil|barrage/.test(n)) return 'reservoir';
+  if (/\bsea\b/.test(n)) return 'sea';
+  if (/\b(lake|lac|lago|lagoa|laguna|ozero|nuur|co|tso)\b|järvi|jarvi|sjön/.test(n)) return 'water';
+  if (/crater|structure|dome|basin|ring|massif|arc|caldera|bluff|pipe/.test(n)) return 'formal';
+  return 'bare';
+};
+function pickDistractors(f, pool, n = 3) {
+  const s = styleOf(f), l = langOf(f);
+  const scored = pool.filter(x => x.id !== f.id && x.name !== f.name).map(x => {
+    const size = 1 - Math.min(1, Math.abs(Math.log((x.extent_km || 1) / (f.extent_km || 1))) / 2.5);
+    const k = (styleOf(x) === s ? 4 : 0) + (langOf(x) === l ? 2 : 0) + (x.region === f.region ? 1 : 0)
+      + size + (deck.similarity ? deck.similarity(f, x) : 0) + Math.random() * 1.8;
+    return { x, k };
+  }).sort((a, b) => b.k - a.k);
+  const out = [];
+  for (const { x } of scored) { if (out.length >= n) break; if (!out.some(o => o.name === x.name)) out.push(x); }
+  return out;
+}
+
 const visRank = f => ({ obvious: 0, clear: 1, subtle: 2 }[f.crater?.visibility] ?? 1);
 const fmtAge = ma => ma < 1 ? `${Math.round(ma * 1000).toLocaleString()} ka` : `${ma} Ma`;
 
@@ -271,10 +306,7 @@ function renderQuestion() {
   $('choices').classList.toggle('hidden', settings.mode !== 'choice');
   $('typed').classList.toggle('hidden', settings.mode !== 'typed');
   if (settings.mode === 'choice') {
-    const pool = deck.distractorPool(f, all);
-    const opts = [f];
-    for (const x of pool) { if (opts.length >= 4) break; if (!opts.some(o => o.id === x.id || o.name === x.name)) opts.push(x); }
-    cur.opts = shuffle(opts);
+    cur.opts = shuffle([f, ...pickDistractors(f, deck.pool(f, all))]);
     $('choices').innerHTML = cur.opts.map((o, i) => `<button data-i="${i}"><kbd>${i + 1}</kbd>${esc(o.name)}</button>`).join('');
     $('choices').querySelectorAll('button').forEach(b => b.onclick = () => answer(cur.opts[+b.dataset.i]));
   } else {
