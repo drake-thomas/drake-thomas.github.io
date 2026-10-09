@@ -1,0 +1,73 @@
+/* Shared look for geo_lab apps: dark chrome around full-bleed imagery. */
+:root {
+  --bg: #0b0d10;
+  --panel: rgba(18, 21, 26, 0.9);
+  --panel-solid: #14171c;
+  --line: #2c323b;
+  --text: #eef0f3;
+  --muted: #9aa3ad;
+  --accent: #4fb3ff;
+  --accent-ink: #001a2c;
+  --good: #5ad17a;
+  --warn: #f0b84a;
+  --bad: #ff6b6b;
+  --radius: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+body.fullbleed { overflow: hidden; }
+a { color: var(--accent); }
+h1, h2, h3 { margin: 0 0 .4em; line-height: 1.2; }
+kbd { background: #2a2f37; border: 1px solid #3a414c; border-radius: 4px; padding: 0 5px; font-size: 12px; font-family: inherit; }
+
+.panel { background: var(--panel); border: 1px solid rgba(255,255,255,.05); border-radius: var(--radius);
+  padding: 10px 14px; box-shadow: 0 4px 20px rgba(0,0,0,.45); backdrop-filter: blur(6px); }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; }
+.hidden { display: none !important; }
+
+button, .btn { font: inherit; color: var(--text); background: #2a2f37; border: 1px solid #3a414c;
+  border-radius: 8px; padding: 8px 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+button:hover:not(:disabled), .btn:hover { background: #343b45; }
+button:disabled { opacity: .4; cursor: default; }
+button.primary, .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+button.primary:hover:not(:disabled) { background: #74c3ff; }
+button.good { border-color: var(--good); }
+button.bad { border-color: var(--bad); }
+button.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+input[type=text], input[type=search], select { font: inherit; color: var(--text); background: #1b1f25;
+  border: 1px solid #3a414c; border-radius: 8px; padding: 7px 10px; }
+
+/* SatView */
+.satview { position: absolute; inset: 0; overflow: hidden; background: #000; }
+.satview .sv-rot { position: absolute; }
+.satview .sv-map { position: absolute; inset: 0; }
+.satview .sv-sat { z-index: 1; }
+.satview .sv-pre { z-index: 0; inset: -50%; }
+.satview.sv-loading .sv-rot { visibility: hidden; }
+
+/* Common game chrome */
+.hud { position: fixed; top: 12px; left: 12px; z-index: 10; display: flex; gap: 18px; align-items: center; }
+.hud .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.hud .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.zoomctl { position: fixed; left: 12px; bottom: 12px; z-index: 10; display: flex; flex-direction: column; gap: 6px; }
+.zoomctl button { width: 44px; height: 44px; font-size: 22px; padding: 0; }
+.topright { position: fixed; top: 12px; right: 12px; z-index: 10; display: flex; gap: 8px; }
+.status { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5; color: var(--muted); }
+
+.overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.6); z-index: 50; padding: 16px; }
+.overlay .panel { max-width: 560px; width: 100%; padding: 22px 26px; max-height: calc(100vh - 32px); overflow: auto; }
+.overlay p { color: var(--muted); margin: 6px 0; }
+
+.stat-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #232831; color: var(--muted); }
+.pill b { color: var(--text); }
+.tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+
+@media (max-width: 640px) {
+  .hud { gap: 10px; padding: 6px 10px; }
+  .hud .v { font-size: 15px; }
+}

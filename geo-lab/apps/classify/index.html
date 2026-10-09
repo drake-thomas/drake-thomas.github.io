@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where's This?</title>
+<link rel="stylesheet" href="../../lib/ui.css">
+<script src="../../config.js"></script>
+<style>
+  #sv { position: fixed; inset: 0; }
+  #ask { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 10; width: min(760px, calc(100vw - 24px)); }
+  #classBtns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  #classBtns button { padding: 14px 10px; font-size: 15px; }
+  #classBtns button.right { background: #1d3b27; border-color: var(--good); }
+  #classBtns button.wrong { background: #3b1d1d; border-color: var(--bad); }
+  #mapWrap { height: 260px; border-radius: 8px; overflow: hidden; transition: height .2s; }
+  #mapWrap:hover, body.revealed #mapWrap { height: min(420px, 50vh); }
+  #guessMap { width: 100%; height: 100%; }
+  #prompt { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  #reveal { display: none; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  body.revealed #reveal { display: block; }
+  #reveal h2 { font-size: 19px; margin: 0; }
+  #verdict { font-weight: 700; } #verdict.ok { color: var(--good); } #verdict.mid { color: var(--warn); } #verdict.no { color: var(--bad); }
+  #tags { margin: 6px 0; display: flex; gap: 4px; flex-wrap: wrap; }
+  #statsBody table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; margin: 8px 0; }
+  #statsBody td, #statsBody th { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: right; }
+  #statsBody td:first-child, #statsBody th:first-child { text-align: left; }
+  #tipsBody { font-size: 13px; color: var(--muted); }
+  #tipsBody b { color: var(--text); }
+  @media (min-width: 1100px) {
+    body.revealed.mode-jungles #ask { left: auto; right: 12px; transform: none; width: 460px; }
+  }
+</style>
+</head>
+<body class="fullbleed">
+<div id="sv"></div>
+<div id="status" class="status">Loading…</div>
+
+<div class="hud panel">
+  <div><div class="k">Mode</div><div class="v" id="hMode">–</div></div>
+  <div><div class="k">Session</div><div class="v" id="hSession">0/0</div></div>
+  <div><div class="k">All-time</div><div class="v" id="hAll">–</div></div>
+  <div><div class="k">Streak</div><div class="v" id="hStreak">0</div></div>
+</div>
+<div class="topright">
+  <select id="diff" title="Difficulty"><option value="all">All difficulties</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select>
+  <button id="statsBtn">Stats</button>
+  <button id="tipsBtn">Tips</button>
+  <a class="btn" href="../../">⌂</a>
+</div>
+<div class="zoomctl">
+  <button id="zIn" title="Zoom in (=)">+</button>
+  <button id="zOut" title="Zoom out (-)">−</button>
+</div>
+
+<div id="ask" class="panel hidden">
+  <div id="prompt"><b id="question" class="grow"></b><span class="muted small" id="zoomNote"></span></div>
+  <div id="classBtns" class="hidden"></div>
+  <div id="mapWrap" class="hidden"><div id="guessMap"></div></div>
+  <div id="cityRow" class="row hidden" style="margin-top:8px"><span class="muted small grow" id="pickNote">Click the country you think this is.</span><button id="guessBtn" class="primary" disabled>Guess</button></div>
+  <div id="reveal">
+    <div class="row"><span id="verdict"></span><span class="grow"></span><button id="exploreBtn">Explore</button><button id="nextBtn" class="primary">Next (Enter)</button></div>
+    <h2 id="rTitle"></h2>
+    <div class="muted small" id="rSub"></div>
+    <div id="tags"></div>
+    <div class="small" id="rNote"></div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay hidden"><div class="panel" id="overlayBody"></div></div>
+
+<script type="module">
+import { SatView } from '../../lib/satview.js';
+import { loadMaps, loadJSON } from '../../lib/maps.js';
+import { haversineKm, fmtKm, shuffle, rand, PolygonIndex } from '../../lib/geo.js';
+
+const MODES = {
+  jungles: {
+    title: 'Jungles', data: '../../data/datasets/jungles.json', notes: '../../data/datasets/jungles.notes.md',
+    question: 'Whose rainforest is this?',
+    classes: [['amazon', 'Amazon'], ['congo', 'Congo'], ['seasia', 'Southeast Asia']],
+    maxZoomOut: 2,
+    zoomShift: [0.3, 1.5],  // show samples somewhat closer than curated: canopy texture is the tell
+  },
+  cities: {
+    title: 'Cities', data: '../../data/datasets/cities.json', notes: '../../data/datasets/cities.notes.md',
+    question: 'Which country is this city in?',
+    maxZoomOut: 3,
+  },
+};
+const params = new URLSearchParams(location.search);
+const modeId = MODES[params.get('mode')] ? params.get('mode') : 'jungles';
+const mode = MODES[modeId];
+document.body.classList.add('mode-' + modeId);
+const STATS_KEY = `geolab.classify.${modeId}`;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let sv, samples = [], queue = [], cur = null, session = { n: 0, score: 0 }, streak = 0;
+let stats = loadStats();
+let guessMap, guessMarker, answerMarker, line, countries, countryIdx, countryFeature;
+
+function loadStats() { try { return JSON.parse(localStorage.getItem(STATS_KEY)) || { n: 0, score: 0, conf: {}, seen: {} }; } catch { return { n: 0, score: 0, conf: {}, seen: {} }; } }
+function saveStats() { try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch {} }
+
+async function main() {
+  $('hMode').textContent = mode.title;
+  document.title = `${mode.title}: where's this?`;
+  sv = new SatView($('sv'));
+  let data;
+  try { data = await loadJSON(params.get('data') || mode.data); }
+  catch { $('status').textContent = `No dataset yet (${mode.data}). It's still being built.`; return; }
+  samples = (Array.isArray(data) ? data : data.samples || []).filter(s => (s.quality ?? 3) >= 3);
+  await sv.ready;
+  if (modeId === 'cities') await setupCityMap();
+  else setupClassButtons();
+  $('status').remove();
+  $('diff').value = localStorage.getItem(STATS_KEY + '.diff') || 'all';
+  refillQueue();
+  updateHud();
+  next();
+}
+
+function refillQueue() {
+  const d = $('diff').value;
+  let pool = samples.filter(s => d === 'all' || s.difficulty === d);
+  if (!pool.length) pool = samples;
+  // Least-seen first (with shuffling), so you cycle through the whole set before repeats.
+  queue = shuffle(pool.slice()).sort((a, b) => (stats.seen[a.id] || 0) - (stats.seen[b.id] || 0));
+  if (modeId === 'jungles') {  // interleave classes so runs of one answer don't happen
+    const by = {}; queue.forEach(s => (by[s.label] ||= []).push(s));
+    const keys = Object.keys(by); queue = [];
+    while (keys.some(k => by[k].length)) shuffle(keys).forEach(k => by[k].length && queue.push(by[k].shift()));
+  }
+}
+
+let upcoming = null;  // { s, z } whose tiles were preloaded while the last answer was on screen
+const planZoom = s => Math.min(17.5, s.zoom + rand(...(mode.zoomShift || [-0.4, 0.4])));
+
+function preloadNext() {
+  if (!queue.length) refillQueue();
+  const s = queue[0];
+  if (!s) return;
+  upcoming = { s, z: planZoom(s) };
+  sv.preload({ lat: s.lat, lng: s.lng, zoom: upcoming.z });
+}
+
+async function next() {
+  document.body.classList.remove('revealed');
+  if (!queue.length) refillQueue();
+  const s = queue.shift();
+  cur = { s, answered: false };
+  $('ask').classList.add('hidden');
+  const z = upcoming?.s === s ? upcoming.z : planZoom(s);
+  upcoming = null;
+  await sv.show({ lat: s.lat, lng: s.lng, zoom: z, minZoom: z - mode.maxZoomOut, maxZoom: z + 2.5 });
+  cur.startZoom = z;
+  $('question').textContent = mode.question;
+  $('zoomNote').textContent = `you can zoom out ${mode.maxZoomOut} levels`;
+  $('ask').classList.remove('hidden');
+  if (modeId === 'jungles') {
+    $('classBtns').querySelectorAll('button').forEach(b => { b.classList.remove('right', 'wrong'); b.disabled = false; });
+  } else {
+    resetCityMap();
+  }
+}
+
+// ---------- jungles ----------
+function setupClassButtons() {
+  $('classBtns').classList.remove('hidden');
+  $('classBtns').innerHTML = mode.classes.map(([id, name], i) => `<button data-c="${id}"><kbd>${i + 1}</kbd> ${name}</button>`).join('');
+  $('classBtns').querySelectorAll('button').forEach(b => b.onclick = () => answerClass(b.dataset.c));
+}
+
+function answerClass(c) {
+  if (!cur || cur.answered) return;
+  cur.answered = true;
+  const s = cur.s, ok = c === s.label;
+  $('classBtns').querySelectorAll('button').forEach(b => {
+    b.disabled = true;
+    if (b.dataset.c === s.label) b.classList.add('right'); else if (b.dataset.c === c) b.classList.add('wrong');
+  });
+  record(s, ok ? 1 : 0, c);
+  const name = Object.fromEntries(mode.classes)[s.label];
+  reveal(ok ? 'ok' : 'no', ok ? '✓ Correct' : `✗ It's ${name}`, `${name}${s.subregion ? ' · ' + s.subregion : ''}`,
+    `${s.lat.toFixed(3)}, ${s.lng.toFixed(3)} · zoom ${s.zoom} · ${s.difficulty || ''}`);
+}
+
+// ---------- cities ----------
+async function setupCityMap() {
+  $('mapWrap').classList.remove('hidden');
+  $('cityRow').classList.remove('hidden');
+  countries = (await loadJSON('../../data/build/countries.json')).features;
+  countryIdx = new PolygonIndex(countries);
+  guessMap = new google.maps.Map($('guessMap'), {
+    center: { lat: 20, lng: 10 }, zoom: 1, mapTypeId: 'roadmap', disableDefaultUI: true, zoomControl: true,
+    gestureHandling: 'greedy', clickableIcons: false, draggableCursor: 'crosshair',
+  });
+  guessMap.data.setStyle(f => ({ fillOpacity: 0, strokeWeight: 0 }));
+  guessMap.addListener('click', e => {
+    if (!cur || cur.answered) return;
+    const p = e.latLng.toJSON();
+    const c = countryIdx.find(p.lng, p.lat);
+    cur.guess = { p, c: c ? c.properties : null };
+    if (!guessMarker) guessMarker = new google.maps.Marker({ map: guessMap });
+    guessMarker.setMap(guessMap); guessMarker.setPosition(p);
+    highlightCountry(c, '#4fb3ff');
+    $('pickNote').textContent = c ? c.properties.name : 'No country there; click on land.';
+    $('guessBtn').disabled = !c;
+  });
+}
+
+function highlightCountry(c, color) {
+  if (countryFeature) countryFeature.forEach(f => guessMap.data.remove(f));
+  countryFeature = c ? guessMap.data.addGeoJson(c) : null;
+  guessMap.data.setStyle({ fillColor: color, fillOpacity: 0.25, strokeColor: color, strokeWeight: 1.5 });
+}
+
+function resetCityMap() {
+  for (const m of [guessMarker, answerMarker, line]) m?.setMap(null);
+  highlightCountry(null);
+  $('guessBtn').disabled = true;
+  $('pickNote').textContent = 'Click the country you think this is.';
+  guessMap.setOptions({ center: { lat: 20, lng: 10 }, zoom: 1 });
+}
+
+function answerCity() {
+  if (!cur || cur.answered || !cur.guess?.c) return;
+  cur.answered = true;
+  const s = cur.s, g = cur.guess.c;
+  const exact = g.iso_a3 === s.iso_a3 || g.name === s.country;
+  const sub = !exact && g.subregion && g.subregion === s.subregion;
+  const cont = !exact && !sub && g.continent && g.continent === s.continent;
+  const pts = exact ? 1 : sub ? 0.5 : cont ? 0.2 : 0;
+  record(s, pts, g.iso_a3);
+  const km = haversineKm(cur.guess.p, s);
+  answerMarker = new google.maps.Marker({ map: guessMap, position: { lat: s.lat, lng: s.lng },
+    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#5ad17a', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 } });
+  line = new google.maps.Polyline({ map: guessMap, path: [cur.guess.p, { lat: s.lat, lng: s.lng }], geodesic: true, strokeColor: '#ffcc33', strokeWeight: 2 });
+  const truth = countries.find(c => c.properties.iso_a3 === s.iso_a3);
+  highlightCountry(truth, exact ? '#5ad17a' : '#ff6b6b');
+  const b = new google.maps.LatLngBounds(); b.extend(cur.guess.p); b.extend({ lat: s.lat, lng: s.lng });
+  setTimeout(() => { if (km < 300) guessMap.setOptions({ center: { lat: s.lat, lng: s.lng }, zoom: 5 }); else guessMap.fitBounds(b, 40); }, 200);
+  reveal(exact ? 'ok' : pts ? 'mid' : 'no',
+    exact ? '✓ Right country' : sub ? `≈ Right region (${esc(g.name)})` : cont ? `~ Right continent (${esc(g.name)})` : `✗ ${esc(g.name)}`,
+    `${s.city}, ${s.country}`, `${s.subregion || ''} · ${fmtKm(km)} from your pin · pop ${s.pop ? (+s.pop).toLocaleString() : '?'}`);
+}
+
+// ---------- shared ----------
+function record(s, pts, answer) {
+  session.n++; session.score += pts;
+  stats.n++; stats.score += pts;
+  stats.seen[s.id] = (stats.seen[s.id] || 0) + 1;
+  const key = modeId === 'jungles' ? s.label : (s.subregion || s.continent || '?');
+  const row = stats.conf[key] ||= { n: 0, score: 0, answers: {} };
+  row.n++; row.score += pts; row.answers[answer || '?'] = (row.answers[answer || '?'] || 0) + 1;
+  streak = pts >= 1 ? streak + 1 : 0;
+  saveStats(); updateHud();
+}
+
+function reveal(cls, verdict, title, sub) {
+  const s = cur.s;
+  sv.bounds = { min: 2, max: 21 };  // once answered, zoom freely
+  $('zoomNote').textContent = 'zoom is unlocked';
+  $('verdict').className = cls; $('verdict').innerHTML = verdict;
+  $('rTitle').textContent = title;
+  $('rSub').textContent = sub;
+  $('tags').innerHTML = (s.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+  $('rNote').textContent = s.note || '';
+  document.body.classList.add('revealed');
+  preloadNext();
+}
+
+function updateHud() {
+  $('hSession').textContent = `${fmt(session.score)}/${session.n}`;
+  $('hAll').textContent = stats.n ? `${Math.round(100 * stats.score / stats.n)}% of ${stats.n}` : '–';
+  $('hStreak').textContent = streak;
+}
+const fmt = x => Number.isInteger(x) ? x : x.toFixed(1);
+
+function showStats() {
+  const rows = Object.entries(stats.conf).sort((a, b) => b[1].n - a[1].n);
+  const names = modeId === 'jungles' ? Object.fromEntries(mode.classes) : {};
+  showOverlay(`<div class="row"><h2 class="grow">${mode.title} stats</h2><button id="xClose">✕</button></div>
+    <p>${stats.n} answered · ${stats.n ? Math.round(100 * stats.score / stats.n) : 0}% score</p>
+    <div id="statsBody"><table><tr><th>${modeId === 'jungles' ? 'Truth' : 'Region'}</th><th>n</th><th>score</th><th>${modeId === 'jungles' ? 'answered as' : 'top guesses'}</th></tr>
+    ${rows.map(([k, r]) => `<tr><td>${esc(names[k] || k)}</td><td>${r.n}</td><td>${Math.round(100 * r.score / r.n)}%</td>
+      <td class="small">${Object.entries(r.answers).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([a, n]) => `${esc(names[a] || a)} ${n}`).join(', ')}</td></tr>`).join('')}
+    </table></div>
+    <button id="xReset" class="bad">Reset stats</button>`);
+  $('xClose').onclick = hideOverlay;
+  $('xReset').onclick = () => { stats = { n: 0, score: 0, conf: {}, seen: {} }; saveStats(); updateHud(); hideOverlay(); };
+}
+
+async function showTips() {
+  let md = '';
+  try { md = await (await fetch(mode.notes)).text(); } catch {}
+  // Show the section(s) about visual cues if present, else the whole notes file.
+  const m = md.match(/#+[^\n]*(cue|distinguish|tips|tell)[^\n]*\n([\s\S]*?)(?=\n#+ |\n*$)/i);
+  showOverlay(`<div class="row"><h2 class="grow">Tips</h2><button id="xClose">✕</button></div><div id="tipsBody">${miniMd(m ? m[0] : md || 'No tips yet.')}</div>`);
+  $('xClose').onclick = hideOverlay;
+}
+
+// Tiny markdown: headings, bullets, bold, italics, inline code, tables -> preformatted rows.
+function miniMd(md) {
+  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|\W)\*(.+?)\*(?=\W|$)/g, '$1<i>$2</i>').replace(/`(.+?)`/g, '<code>$1</code>');
+  // Join soft-wrapped continuation lines onto the previous bullet/paragraph line.
+  const lines = [];
+  for (const l of md.split('\n')) {
+    const starts = /^\s*([-*]\s|#|\|)/.test(l) || !l.trim();
+    if (!starts && lines.length && lines[lines.length - 1].trim()) lines[lines.length - 1] += ' ' + l.trim();
+    else lines.push(l);
+  }
+  let html = '', inList = false;
+  for (const line of lines) {
+    const h = line.match(/^(#+)\s+(.*)/), li = line.match(/^\s*[-*]\s+(.*)/);
+    if (inList && !li) { html += '</ul>'; inList = false; }
+    if (h) html += `<h3 style="margin:12px 0 4px;color:var(--text)">${inline(h[2])}</h3>`;
+    else if (li) { if (!inList) { html += '<ul style="margin:4px 0;padding-left:18px">'; inList = true; } html += `<li>${inline(li[1])}</li>`; }
+    else if (line.trim()) html += `<p style="margin:6px 0">${inline(line)}</p>`;
+  }
+  return html + (inList ? '</ul>' : '');
+}
+
+function showOverlay(html) { $('overlayBody').innerHTML = html; $('overlay').classList.remove('hidden'); }
+function hideOverlay() { $('overlay').classList.add('hidden'); }
+
+function toggleExplore() {
+  if (!cur?.answered) return;
+  const on = sv.locked;
+  sv.setExplore(on);
+  $('exploreBtn').textContent = on ? 'Back' : 'Explore';
+}
+
+$('zIn').onclick = () => sv.zoomBy(1);
+$('zOut').onclick = () => sv.zoomBy(-1);
+$('guessBtn').onclick = answerCity;
+$('nextBtn').onclick = () => cur?.answered && next();
+$('exploreBtn').onclick = toggleExplore;
+$('statsBtn').onclick = showStats;
+$('tipsBtn').onclick = showTips;
+$('diff').onchange = () => { localStorage.setItem(STATS_KEY + '.diff', $('diff').value); refillQueue(); next(); };
+addEventListener('keydown', e => {
+  if (!$('overlay').classList.contains('hidden')) { if (e.key === 'Escape') hideOverlay(); return; }
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === '-' || e.key === '_') sv.zoomBy(-1);
+  else if (e.key === '=' || e.key === '+') sv.zoomBy(1);
+  else if (!cur) return;
+  else if (!cur.answered && modeId === 'jungles' && /^[1-3]$/.test(e.key)) answerClass(mode.classes[+e.key - 1][0]);
+  else if (!cur.answered && modeId === 'cities' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); answerCity(); }
+  else if (cur.answered && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); }
+  else if (cur.answered && (e.key === 'e' || e.key === 'E')) toggleExplore();
+});
+
+main().catch(err => { console.error(err); const s = $('status'); if (s) s.textContent = 'Failed to load: ' + err.message; });
+</script>
+</body>
+</html>

@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature Quiz</title>
+<link rel="stylesheet" href="../../lib/ui.css">
+<script src="../../config.js"></script>
+<style>
+  #sv { position: fixed; inset: 0; }
+  #ask { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 10; width: min(720px, calc(100vw - 24px)); }
+  #choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #choices button { text-align: left; padding: 10px 12px; }
+  #choices button kbd { margin-right: 8px; }
+  #choices button.right { background: #1d3b27; border-color: var(--good); }
+  #choices button.wrong { background: #3b1d1d; border-color: var(--bad); }
+  #typed { display: flex; gap: 8px; }
+  #typed input { flex: 1; }
+  #prompt { margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; }
+  #prompt b { font-size: 15px; }
+  #reveal { display: none; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+  body.revealed #reveal { display: block; }
+  #reveal h2 { font-size: 20px; margin: 0; }
+  #reveal .facts { margin: 2px 0 6px; }
+  #reveal .look { color: var(--warn); font-size: 13px; margin: 4px 0; }
+  #revealBody { display: grid; grid-template-columns: 1fr 200px; gap: 12px; }
+  #mini { width: 200px; height: 130px; border-radius: 8px; overflow: hidden; }
+  #grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+  #grades button { padding: 8px 6px; }
+  #grades button small { display: block; color: var(--muted); font-size: 11px; }
+  #grades button.sugg { outline: 2px solid var(--accent); }
+  #verdict { font-weight: 700; }
+  #verdict.ok { color: var(--good); } #verdict.no { color: var(--bad); }
+  #browseList { columns: 2; column-gap: 18px; font-size: 13px; }
+  #browseList div { break-inside: avoid; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+  #browseList div:hover { background: #2a3039; }
+  .lvl { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+  @media (min-width: 1100px) {  /* keep the feature (screen center) visible after answering */
+    body.revealed #ask { left: auto; right: 12px; transform: none; width: 480px; bottom: 12px; }
+    body.revealed #choices { grid-template-columns: 1fr; }
+    body.revealed #revealBody { grid-template-columns: 1fr; }
+    body.revealed #mini { width: 100%; height: 120px; }
+  }
+  @media (max-width: 640px) {
+    #revealBody { grid-template-columns: 1fr; }
+    #mini { width: 100%; }
+    #choices { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body class="fullbleed">
+<div id="sv"></div>
+<div id="status" class="status">Loading…</div>
+
+<div class="hud panel">
+  <div><div class="k">Deck</div><div class="v" id="hDeck">–</div></div>
+  <div><div class="k">Due</div><div class="v" id="hDue">–</div></div>
+  <div><div class="k">New today</div><div class="v" id="hNew">–</div></div>
+  <div><div class="k">Learned</div><div class="v" id="hLearned">–</div></div>
+  <div><div class="k">Streak</div><div class="v" id="hStreak">0</div></div>
+</div>
+<div class="topright">
+  <button id="browseBtn" title="Browse deck (B)">Browse</button>
+  <button id="settingsBtn" title="Settings">⚙</button>
+  <a class="btn" href="../../">⌂</a>
+</div>
+<div class="zoomctl">
+  <button id="zIn" title="Zoom in (=)">+</button>
+  <button id="zOut" title="Zoom out (-)">−</button>
+</div>
+
+<div id="ask" class="panel hidden">
+  <div id="prompt"><b id="question">What is this?</b><span class="muted small grow" id="hint"></span>
+    <button id="dunno" title="Reveal (0)">I don't know</button></div>
+  <div id="choices"></div>
+  <div id="typed" class="hidden"><input id="typedInput" type="text" list="names" placeholder="Type the name… (Enter)" autocomplete="off"><button id="typedGo" class="primary">Answer</button></div>
+  <datalist id="names"></datalist>
+  <div id="reveal">
+    <div class="row"><span id="verdict"></span><span class="muted small grow" id="explainGrade"></span>
+      <button id="exploreBtn" title="Pan around with labels (E)">Explore</button></div>
+    <div id="revealBody">
+      <div>
+        <h2 id="rName"></h2>
+        <div class="muted small" id="rAka"></div>
+        <div class="facts small muted" id="rFacts"></div>
+        <div id="rDesc"></div>
+        <div class="look" id="rLook"></div>
+      </div>
+      <div id="mini"></div>
+    </div>
+    <div id="grades"></div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay hidden"><div class="panel" id="overlayBody"></div></div>
+
+<script type="module">
+import { SatView } from '../../lib/satview.js';
+import { loadMaps, loadJSON } from '../../lib/maps.js';
+import { SRS, GRADES } from '../../lib/srs.js';
+import { zoomForKm, offsetKm, fmtKm, shuffle, rand, pick } from '../../lib/geo.js';
+
+// ---------- deck definitions ----------
+const DECKS = {
+  craters: {
+    title: 'Impact craters', question: 'Which impact crater is this?',
+    // In the wild you meet craters small and off-center, so most cards show them that way.
+    scatter: { p: 0.75, fill: [0.025, 0.08], minZoom: 5 },
+    marker: 'ring', markLabel: 'ringed',
+    filter: f => f.src === 'craters' && f.category === 'impact-crater',
+    // new cards come in random order, nudged so obvious craters tend to come first
+    introKey: (f, r) => r + visRank(f) * 0.6,
+    distractorPool: (f, all) => {
+      const others = all.filter(x => x.src === 'craters' && x.id !== f.id);
+      const look = others.filter(x => x.crater_lookalike);
+      const craters = others.filter(x => !x.crater_lookalike);
+      const near = craters.filter(x => x.region === f.region);
+      return [...shuffle(near).slice(0, 2), ...shuffle(look).slice(0, Math.random() < 0.35 ? 1 : 0), ...shuffle(craters)];
+    },
+    facts: f => [f.crater?.diameter_km && `⌀ ${f.crater.diameter_km} km`, f.crater?.age_ma != null && `${fmtAge(f.crater.age_ma)}`, f.country, f.crater?.visibility],
+    tiers: null,
+  },
+  lakes: {
+    title: 'Major lakes', question: 'Which lake is this?',
+    // Half the cards show the lake smaller and off-center, as you'd stumble on it while browsing.
+    scatter: { p: 0.5, fill: [0.12, 0.35], minZoom: 3 },
+    // Several lakes are often in view (e.g. the Great Lakes), so every card pins the one being asked about.
+    marker: 'pin', markLabel: 'pinned', alwaysMark: true,
+    filter: f => f.src === 'lakes' && f.lake?.rank,
+    introKey: (f, r) => r,  // random order within the chosen size tier
+    distractorPool: (f, all) => {
+      const others = all.filter(x => x.src === 'lakes' && x.id !== f.id && x.lake?.rank);
+      const close = others.filter(x => Math.abs(x.lake.rank - f.lake.rank) <= 25);
+      const sameRegion = close.filter(x => x.region === f.region);
+      return [...shuffle(sameRegion).slice(0, 2), ...shuffle(close), ...shuffle(others)];
+    },
+    facts: f => [f.lake?.area_km2 && `${Math.round(f.lake.area_km2).toLocaleString()} km²`, f.lake?.rank && `#${f.lake.rank} by area`, f.lake?.kind, f.country],
+    tiers: [20, 50, 100, 150],
+  },
+};
+const visRank = f => ({ obvious: 0, clear: 1, subtle: 2 }[f.crater?.visibility] ?? 1);
+const fmtAge = ma => ma < 1 ? `${Math.round(ma * 1000).toLocaleString()} ka` : `${ma} Ma`;
+
+const params = new URLSearchParams(location.search);
+const deckId = DECKS[params.get('deck')] ? params.get('deck') : 'craters';
+const deck = DECKS[deckId];
+const SETTINGS_KEY = `geolab.quiz.${deckId}.settings`;
+const settings = Object.assign({ newPerDay: 10, mode: 'choice', tier: 50 }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
+const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
+
+const $ = id => document.getElementById(id);
+let sv, srs, all = [], cards = [], byId = {}, cur = null, streak = 0, mini, miniMarker, overlays = [];
+
+async function main() {
+  $('hDeck').textContent = deck.title;
+  document.title = deck.title + ' quiz';
+  sv = new SatView($('sv'), { onZoom: z => updateZoomButtons() });
+  const data = await loadJSON(params.get('data') || '../../data/build/features.json');  // ?data= for dev fixtures
+  all = data.features;
+  await sv.ready;
+  buildDeck();
+  $('status').remove();
+  if (!cards.length) {
+    return showOverlay(`<h1>${deck.title}</h1><p>This deck is empty right now: the dataset is still being built. Run <code>tools/build.py</code> once <code>data/features/${deckId}.json</code> exists.</p><p><a class="btn" href="../../">Back</a></p>`);
+  }
+  showIntro();
+}
+
+// Stable per-browser random order for introducing new cards (seed kept in localStorage).
+function seededRand(id) {
+  let seed = +localStorage.getItem(SETTINGS_KEY + '.seed');
+  if (!seed) { seed = 1 + Math.floor(Math.random() * 2 ** 31); try { localStorage.setItem(SETTINGS_KEY + '.seed', seed); } catch {} }
+  let h = seed ^ 0x9e3779b9;
+  for (const c of id) h = Math.imul(h ^ c.charCodeAt(0), 0x85ebca6b) ^ (h >>> 13);
+  return ((h >>> 0) % 1e6) / 1e6;
+}
+
+function buildDeck() {
+  cards = all.filter(deck.filter);
+  const key = Object.fromEntries(cards.map(f => [f.id, deck.introKey(f, seededRand(f.id))]));
+  cards.sort((a, b) => key[a.id] - key[b.id]);
+  if (deck.tiers) cards = cards.filter(f => f.lake.rank <= settings.tier);
+  byId = Object.fromEntries(cards.map(f => [f.id, f]));
+  srs = new SRS(deckId + (deck.tiers ? '' : ''), cards.map(f => f.id), { newPerDay: settings.newPerDay });
+  $('names').innerHTML = all.filter(deck.filter).map(f => `<option value="${esc(f.name)}">`).join('');
+  updateHud();
+}
+
+function showIntro() {
+  const s = srs.stats();
+  showOverlay(`
+    <h1>${deck.title}</h1>
+    <p>${cards.length} cards${deck.tiers ? ` (top ${settings.tier} by area)` : ''}. Each one is shown at a random rotation, scale and offset, so you learn the thing and not one picture of it.</p>
+    <div class="stat-pills" style="margin:10px 0">
+      <span class="pill">due <b>${s.due}</b></span><span class="pill">new <b>${s.new}</b></span>
+      <span class="pill">learning <b>${s.learning}</b></span><span class="pill">young <b>${s.young}</b></span><span class="pill">mature <b>${s.mature}</b></span>
+    </div>
+    <p class="small"><kbd>1</kbd>–<kbd>4</kbd> answer · <kbd>0</kbd> don't know · <kbd>-</kbd>/<kbd>=</kbd> or scroll to zoom (zooming out costs a little) · then <kbd>Enter</kbd> accepts the suggested grade, or pick <kbd>1</kbd>–<kbd>4</kbd> (Again/Hard/Good/Easy).</p>
+    <div class="row" style="margin-top:14px"><button class="primary" id="go">Start</button><button id="go2">Settings</button></div>`);
+  $('go').onclick = () => { hideOverlay(); nextCard(); };
+  $('go2').onclick = showSettings;
+}
+
+// ---------- card flow ----------
+let upcoming = null;  // { id, plan } preloaded while the previous card was being reviewed
+
+// How a card is framed: random rotation and scale; "scatter" decks usually show the
+// feature small, somewhere off-center, with a ring marking it.
+function planView(f) {
+  const W = innerWidth, H = innerHeight, minDim = Math.min(W, H);
+  const rotation = Math.random() * 360;
+  const sc = deck.scatter;
+  if (sc && Math.random() < sc.p) {
+    const fill = rand(sc.fill[0], sc.fill[1]);
+    const zoom = Math.max(sc.minZoom ?? 3, zoomForKm(f.lat, f.extent_km / fill, minDim));
+    const sx = rand(-0.38, 0.38) * W, sy = rand(-0.38, 0.1) * H;  // stay clear of the answer panel at the bottom
+    return { lat: f.lat, lng: f.lng, focus: { lat: f.lat, lng: f.lng, sx, sy }, zoom, rotation, marked: true };
+  }
+  const fill = Math.random() < 0.2 ? rand(0.9, 1.4) : rand(0.3, 0.75);  // fraction of the short side the feature spans
+  const zoom = zoomForKm(f.lat, f.extent_km / fill, minDim);
+  const off = offsetKm(f, ...polar(rand(0, 0.22) * f.extent_km / Math.max(fill, 0.5)));
+  return { lat: off.lat, lng: off.lng, zoom, rotation, marked: !!deck.alwaysMark };
+}
+
+function preloadNext() {
+  const id = srs.peek(cur?.f?.id);
+  if (!id || !byId[id]) return;
+  const plan = planView(byId[id]);
+  upcoming = { id, plan };
+  sv.preload(plan.focus ? { focus: plan.focus, zoom: plan.zoom, rotation: plan.rotation } : { lat: plan.lat, lng: plan.lng, zoom: plan.zoom });
+}
+
+async function nextCard(forceExtra = false) {
+  clearOverlays();
+  document.body.classList.remove('revealed');
+  let id = forceExtra ? srs.extra() : srs.next();
+  if (!id) {
+    const s = srs.stats();
+    return showOverlay(`<h1>All caught up 🎉</h1><p>No reviews due and today's ${settings.newPerDay} new cards are done. ${s.new} new cards remain for later.</p>
+      <div class="row" style="margin-top:12px"><button class="primary" id="extra">Extra practice (weakest first)</button><button id="more">+5 new today</button><a class="btn" href="../../">Home</a></div>`,
+      () => { $('extra').onclick = () => { hideOverlay(); nextCard(true); }; $('more').onclick = () => { srs.newPerDay += 5; hideOverlay(); nextCard(); }; });
+  }
+  cur = { f: byId[id], t0: 0, answered: false };
+  const f = cur.f;
+  const plan = upcoming?.id === id ? upcoming.plan : planView(f);
+  upcoming = null;
+  cur.startZoom = plan.zoom;
+  cur.marked = plan.marked;
+  $('ask').classList.add('hidden');
+  await sv.show({ ...plan, minZoom: Math.max(2, plan.zoom - 3.5), maxZoom: Math.min(20, plan.zoom + (plan.marked ? 5 : 3)) });
+  if (plan.marked && deck.marker === 'pin') {
+    // A small pin on the label point (inside the lake): says which one without giving away its outline.
+    overlays.push(new google.maps.Marker({ map: sv.map, position: { lat: f.lat, lng: f.lng }, clickable: false,
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#ffe27a', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } }));
+  } else if (plan.marked) {
+    // A ring just outside the rim: scales with zoom, so it never covers the crater itself.
+    overlays.push(new google.maps.Circle({ map: sv.map, center: { lat: f.lat, lng: f.lng }, radius: f.extent_km * 1000 * 0.85 + 400,
+      clickable: false, strokeColor: '#ffe27a', strokeOpacity: 0.95, strokeWeight: 2.5, fillOpacity: 0 }));
+  }
+  cur.t0 = performance.now();
+  renderQuestion();
+  updateHud();
+}
+const polar = r => { const a = Math.random() * Math.PI * 2; return [r * Math.cos(a), r * Math.sin(a)]; };
+
+function renderQuestion() {
+  const f = cur.f;
+  $('question').textContent = deck.question.replace('?', cur.marked ? ` (${deck.markLabel})?` : '?');
+  $('hint').textContent = srs.card(f.id) ? '' : 'new card';
+  $('ask').classList.remove('hidden');
+  $('choices').classList.toggle('hidden', settings.mode !== 'choice');
+  $('typed').classList.toggle('hidden', settings.mode !== 'typed');
+  if (settings.mode === 'choice') {
+    const pool = deck.distractorPool(f, all);
+    const opts = [f];
+    for (const x of pool) { if (opts.length >= 4) break; if (!opts.some(o => o.id === x.id || o.name === x.name)) opts.push(x); }
+    cur.opts = shuffle(opts);
+    $('choices').innerHTML = cur.opts.map((o, i) => `<button data-i="${i}"><kbd>${i + 1}</kbd>${esc(o.name)}</button>`).join('');
+    $('choices').querySelectorAll('button').forEach(b => b.onclick = () => answer(cur.opts[+b.dataset.i]));
+  } else {
+    $('typedInput').value = '';
+    setTimeout(() => $('typedInput').focus(), 50);
+  }
+}
+
+const normName = s => String(s).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  .replace(/\b(lake|lac|lago|crater|impact|structure|reservoir|the)\b/g, '').replace(/[^a-z0-9]/g, '');
+function typedMatches(text, f) {
+  const t = normName(text);
+  if (!t) return false;
+  return [f.name, ...(f.aka || [])].some(n => { const m = normName(n); return m === t || (t.length >= 4 && (m.startsWith(t) || lev(m, t) <= Math.max(1, Math.floor(m.length / 6)))); });
+}
+function lev(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+function answer(choice, typedText) {
+  if (!cur || cur.answered) return;
+  cur.answered = true;
+  const f = cur.f;
+  const correct = choice ? choice.id === f.id : typedText != null ? typedMatches(typedText, f) : false;
+  const secs = (performance.now() - cur.t0) / 1000;
+  const zoomedOut = Math.max(0, cur.startZoom - sv.lowestZoom);
+  // Suggested grade: wrong -> Again; right but slow or needed a lot of zoom-out -> Hard; fast and clean -> Easy.
+  let g = !correct ? 0 : (zoomedOut > 2 || secs > 25) ? 1 : (secs < 6 && zoomedOut < 0.5) ? 3 : 2;
+  cur.suggested = g;
+  if (choice) $('choices').querySelectorAll('button').forEach(b => {
+    const o = cur.opts[+b.dataset.i];
+    if (o.id === f.id) b.classList.add('right'); else if (o === choice) b.classList.add('wrong');
+  });
+  streak = correct ? streak + 1 : 0;
+  $('verdict').textContent = correct ? '✓ Correct' : choice || typedText ? `✗ ${esc(choice?.name || typedText)}` : 'Revealed';
+  $('verdict').className = correct ? 'ok' : 'no';
+  $('explainGrade').textContent = `${secs.toFixed(0)}s${zoomedOut > 0.2 ? ` · zoomed out ${zoomedOut.toFixed(1)} levels` : ''}`;
+  showReveal(f);
+  $('grades').innerHTML = GRADES.map((name, i) => `<button data-g="${i}" class="${i === g ? 'sugg' : ''}">${i + 1} · ${name}<small>${nextIvlLabel(f.id, i)}</small></button>`).join('');
+  $('grades').querySelectorAll('button').forEach(b => b.onclick = () => grade(+b.dataset.g));
+  document.body.classList.add('revealed');
+  updateHud();
+  preloadNext();
+}
+
+function nextIvlLabel(id, g) {
+  const c = srs.card(id);
+  if (g === 0) return 'soon';
+  const reps = c?.reps || 0, ivl = c?.ivl || 0, ease = c?.ease || 2.5;
+  const d = reps === 0 ? [0, 0.5, 1, 3][g] : reps === 1 ? [0, 2, 4, 7][g] : Math.max(ivl + 1, ivl * ease * [0, 0.7, 1, 1.35][g]);
+  return d < 1 ? '12h' : d < 30 ? `${Math.round(d)}d` : `${(d / 30).toFixed(1)}mo`;
+}
+
+function grade(g) {
+  if (!cur?.answered) return;
+  srs.grade(cur.f.id, g);
+  nextCard();
+}
+
+function showReveal(f) {
+  sv.bounds = { min: 2, max: 21 };  // once answered, zoom freely
+  $('rName').textContent = f.name;
+  $('rAka').textContent = (f.aka || []).join(' · ');
+  $('rFacts').textContent = deck.facts(f).filter(Boolean).join(' · ');
+  $('rDesc').textContent = f.description || '';
+  $('rLook').textContent = f.look_for ? '👁 ' + f.look_for : '';
+  drawFeatureOutline(f);
+  showMini(f);
+}
+
+function drawFeatureOutline(f) {
+  clearOverlays();
+  const style = { strokeColor: '#ffe27a', strokeOpacity: 0.9, strokeWeight: 2, fillOpacity: 0, clickable: false, map: sv.map };
+  const ring = r => r.map(([lng, lat]) => ({ lat, lng }));
+  const g = f.geometry;
+  if (g?.type === 'Polygon') overlays.push(new google.maps.Polygon({ ...style, paths: g.coordinates.map(ring) }));
+  else if (g?.type === 'MultiPolygon') overlays.push(new google.maps.Polygon({ ...style, paths: g.coordinates.flatMap(p => p.map(ring)) }));
+  else overlays.push(new google.maps.Circle({ ...style, center: { lat: f.lat, lng: f.lng }, radius: f.extent_km * 500 }));
+}
+function clearOverlays() { overlays.forEach(o => o.setMap(null)); overlays = []; }
+
+function showMini(f) {
+  if (!mini) {
+    mini = new google.maps.Map($('mini'), { center: f, zoom: 1, mapTypeId: 'terrain', disableDefaultUI: true, gestureHandling: 'cooperative', clickableIcons: false });
+    miniMarker = new google.maps.Marker({ map: mini });
+  }
+  mini.setOptions({ center: { lat: f.lat, lng: f.lng }, zoom: 2 });
+  miniMarker.setPosition({ lat: f.lat, lng: f.lng });
+}
+
+// ---------- HUD / overlays / settings ----------
+function updateHud() {
+  if (!srs) return;
+  const s = srs.stats();
+  $('hDue').textContent = s.due;
+  $('hNew').textContent = `${s.newToday}/${srs.newPerDay}`;
+  $('hLearned').textContent = `${s.young + s.mature}/${cards.length}`;
+  $('hStreak').textContent = streak;
+}
+function updateZoomButtons() {
+  $('zIn').disabled = sv.locked && sv.zTarget >= sv.bounds.max - 0.01;
+  $('zOut').disabled = sv.locked && sv.zTarget <= sv.bounds.min + 0.01;
+}
+
+function showOverlay(html, after) {
+  $('overlayBody').innerHTML = html;
+  $('overlay').classList.remove('hidden');
+  after?.();
+}
+function hideOverlay() { $('overlay').classList.add('hidden'); }
+
+function showSettings() {
+  showOverlay(`
+    <h2>Settings · ${deck.title}</h2>
+    <div class="row" style="margin:10px 0"><span class="grow">Answer mode</span>
+      <select id="sMode"><option value="choice">Multiple choice</option><option value="typed">Type the name</option></select></div>
+    <div class="row" style="margin:10px 0"><span class="grow">New cards per day</span><input id="sNew" type="text" size="4" value="${settings.newPerDay}"></div>
+    ${deck.tiers ? `<div class="row" style="margin:10px 0"><span class="grow">Deck size</span><select id="sTier">${deck.tiers.map(t => `<option value="${t}">Top ${t}</option>`).join('')}</select></div>` : ''}
+    <div class="row" style="margin-top:16px"><button class="primary" id="sSave">Save</button><button id="sExport">Export progress</button><button id="sImport">Import</button><button id="sReset" class="bad">Reset progress</button></div>
+    <p class="small">Progress is stored in this browser (localStorage). Export it to keep a backup or move devices.</p>`);
+  $('sMode').value = settings.mode;
+  if (deck.tiers) $('sTier').value = settings.tier;
+  $('sSave').onclick = () => {
+    settings.mode = $('sMode').value;
+    settings.newPerDay = Math.max(1, parseInt($('sNew').value) || 10);
+    if (deck.tiers) settings.tier = +$('sTier').value;
+    saveSettings(); buildDeck(); hideOverlay(); nextCard();
+  };
+  $('sExport').onclick = () => {
+    const blob = new Blob([srs.export()], { type: 'application/json' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `geolab-${deckId}-progress.json` });
+    a.click();
+  };
+  $('sImport').onclick = () => {
+    const inp = Object.assign(document.createElement('input'), { type: 'file', accept: 'application/json' });
+    inp.onchange = async () => { srs.import(await inp.files[0].text()); updateHud(); hideOverlay(); nextCard(); };
+    inp.click();
+  };
+  $('sReset').onclick = () => { if ($('sReset').dataset.armed) { srs.reset(); updateHud(); hideOverlay(); nextCard(); } else { $('sReset').dataset.armed = 1; $('sReset').textContent = 'Click again to confirm'; } };
+}
+
+function showBrowse() {
+  const lv = id => { const c = srs.card(id); return !c ? ['#555', 'new'] : c.reps === 0 ? ['#f0b84a', 'learning'] : c.ivl < 21 ? ['#4fb3ff', 'young'] : ['#5ad17a', 'mature']; };
+  showOverlay(`<div class="row"><h2 class="grow">${deck.title} · ${cards.length}</h2><button id="bClose">✕</button></div>
+    <p class="small"><span class="lvl" style="background:#555"></span>new <span class="lvl" style="background:#f0b84a"></span>learning <span class="lvl" style="background:#4fb3ff"></span>young <span class="lvl" style="background:#5ad17a"></span>mature · click one to study it</p>
+    <div id="browseList">${[...cards].sort((a, b) => (a.lake?.rank ?? 0) - (b.lake?.rank ?? 0) || a.name.localeCompare(b.name)).map(f => `<div data-id="${esc(f.id)}"><span class="lvl" style="background:${lv(f.id)[0]}"></span>${esc(f.name)}</div>`).join('')}</div>`);
+  $('bClose').onclick = () => { hideOverlay(); if (!cur) nextCard(); };
+  $('browseList').querySelectorAll('div').forEach(d => d.onclick = () => study(byId[d.dataset.id]));
+}
+
+async function study(f) {
+  hideOverlay();
+  cur = { f, answered: true, startZoom: 0 };
+  clearOverlays();
+  const zoom = zoomForKm(f.lat, f.extent_km / 0.55, Math.min(innerWidth, innerHeight));
+  await sv.show({ lat: f.lat, lng: f.lng, zoom, rotation: 0 });
+  $('ask').classList.remove('hidden');
+  $('choices').innerHTML = ''; $('typed').classList.add('hidden');
+  $('question').textContent = 'Studying'; $('hint').textContent = '';
+  $('verdict').textContent = ''; $('explainGrade').textContent = 'Not graded. Press Enter for the next card.';
+  showReveal(f);
+  $('grades').innerHTML = '<button id="backToQuiz" class="primary" style="grid-column: span 4">Continue quiz</button>';
+  $('backToQuiz').onclick = () => nextCard();
+  document.body.classList.add('revealed');
+}
+
+// ---------- input ----------
+$('zIn').onclick = () => sv.zoomBy(1);
+$('zOut').onclick = () => sv.zoomBy(-1);
+$('dunno').onclick = () => answer(null);
+$('typedGo').onclick = () => answer(null, $('typedInput').value);
+$('typedInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); answer(null, $('typedInput').value); } });
+$('exploreBtn').onclick = toggleExplore;
+$('settingsBtn').onclick = showSettings;
+$('browseBtn').onclick = showBrowse;
+function toggleExplore() {
+  if (!cur?.answered) return;
+  const on = sv.locked;
+  sv.setExplore(on);
+  $('exploreBtn').textContent = on ? 'Back' : 'Explore';
+}
+addEventListener('keydown', e => {
+  if (!$('overlay').classList.contains('hidden')) {
+    if (e.key === 'Escape') { hideOverlay(); if (!cur) nextCard(); }
+    return;
+  }
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === '-' || e.key === '_') sv.zoomBy(-1);
+  else if (e.key === '=' || e.key === '+') sv.zoomBy(1);
+  else if (e.key === 'b' || e.key === 'B') showBrowse();
+  else if (!cur) return;
+  else if (!cur.answered) {
+    if (/^[1-4]$/.test(e.key) && settings.mode === 'choice' && cur.opts?.[+e.key - 1]) answer(cur.opts[+e.key - 1]);
+    else if (e.key === '0' || e.key === ' ') { e.preventDefault(); answer(null); }
+  } else {
+    if (/^[1-4]$/.test(e.key) && $('grades').querySelector('[data-g]')) grade(+e.key - 1);
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cur.suggested != null ? grade(cur.suggested) : nextCard(); }
+    else if (e.key === 'e' || e.key === 'E') toggleExplore();
+  }
+});
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+main().catch(err => { console.error(err); $('status').textContent = 'Failed to load: ' + err.message; });
+</script>
+</body>
+</html>

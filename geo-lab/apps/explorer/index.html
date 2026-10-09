@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature Explorer</title>
+<link rel="stylesheet" href="../../lib/ui.css">
+<script src="../../config.js"></script>
+<style>
+  #mapWrap { position: fixed; inset: 0; }
+  #map { width: 100%; height: 100%; }
+
+  /* Labels */
+  .lbl { position: absolute; transform: translate(-50%, -50%);
+    /* point features: the dot sits on the location, text to its right */ }
+  .lbl.pt { transform: translate(-6px, -50%); }
+  .lbl.pt .dot { margin-right: 6px; }
+  .lbl.area .dot { display: none; }
+  .lbl.area { letter-spacing: .04em; }
+  #context { position: fixed; left: 12px; bottom: 12px; z-index: 10; font-size: 12px; max-width: min(60vw, 640px); }
+  #context b { color: var(--text); font-weight: 600; cursor: pointer; }
+  #context b:hover { color: #ffe27a; }
+  .lbl { white-space: nowrap; pointer-events: auto;
+    cursor: pointer; color: #fff; font-weight: 600; letter-spacing: .01em; user-select: none;
+    text-shadow: 0 0 3px #000, 0 0 2px #000, 0 1px 3px rgba(0,0,0,.9); }
+  .lbl:hover, .lbl.sel { color: #ffe27a; z-index: 2; }
+  .lbl .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px;
+    vertical-align: 1px; box-shadow: 0 0 0 1.5px rgba(0,0,0,.7); }
+  .lbl.backbone { font-weight: 500; font-style: italic; opacity: .82; }
+  .lbl.s5 { font-size: 15px; } .lbl.s4 { font-size: 14px; } .lbl.s3 { font-size: 13px; }
+  .lbl.s2 { font-size: 12px; } .lbl.s1 { font-size: 11px; }
+  .lbl.marine { color: #a9d8ff; font-style: italic; font-weight: 500; }
+
+  #side { position: fixed; top: 12px; left: 12px; z-index: 10; width: 340px; max-height: calc(100vh - 24px);
+    display: flex; flex-direction: column; gap: 8px; }
+  #searchWrap { position: relative; }
+  #search { width: 100%; }
+  #results { position: absolute; top: 40px; left: 0; right: 0; max-height: 50vh; overflow: auto; padding: 4px; z-index: 3; }
+  #results div { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  #results div:hover, #results div.hl { background: #2a3039; }
+  #info { overflow: auto; }
+  #info h2 { font-size: 18px; margin: 0; }
+  #info .meta { margin: 2px 0 8px; }
+  #info .desc { margin: 6px 0; }
+  #info .look { color: var(--warn); font-size: 13px; margin: 4px 0 8px; }
+  #info .here-list div { padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+  #info .here-list div:hover { background: #2a3039; }
+  #filters { display: none; }
+  #filters.open { display: block; }
+  #filters label { display: inline-flex; gap: 5px; align-items: center; margin: 2px 10px 2px 0; font-size: 13px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  #toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+  #toolbar button { padding: 6px 10px; font-size: 13px; }
+  #zoomInfo { position: fixed; right: 12px; bottom: 28px; z-index: 10; font-size: 12px; }
+  @media (max-width: 640px) {
+    #side { width: auto; right: 12px; }
+    #info { max-height: 38vh; }
+  }
+</style>
+</head>
+<body class="fullbleed">
+<div id="mapWrap"><div id="map"></div></div>
+
+<div id="side">
+  <div id="searchWrap">
+    <input id="search" type="search" placeholder="Search features (/)…" autocomplete="off">
+    <div id="results" class="panel hidden"></div>
+  </div>
+  <div id="toolbar">
+    <button id="surprise" title="Jump to a random distinctive feature (R)">🎲 Surprise me</button>
+    <button id="nearBtn" title="Nearest interesting feature you haven't visited (N)">➜ Nearby</button>
+    <button id="filterBtn">Filters</button>
+    <button id="labelsBtn" title="Toggle labels (L)">Labels: on</button>
+    <a class="btn" href="../../" style="padding:6px 10px;font-size:13px">⌂</a>
+  </div>
+  <div id="filters" class="panel"></div>
+  <div id="info" class="panel hidden"></div>
+</div>
+<div id="zoomInfo" class="panel muted"></div>
+<div id="context" class="panel muted hidden"></div>
+<div id="status" class="status">Loading…</div>
+
+<script type="module">
+import { loadMaps, loadJSON } from '../../lib/maps.js';
+import { metersPerPx, zoomForKm, geometryContains, fmtKm, haversineKm, pick } from '../../lib/geo.js';
+
+const CATS = {  // category -> [group, color]
+  'impact-crater': ['Geologic', '#ff7a59'], 'geologic-structure': ['Geologic', '#ff9f68'],
+  'volcano': ['Relief', '#ff5d5d'], 'mountain': ['Relief', '#d9a26b'], 'mountain-range': ['Relief', '#c49a6c'],
+  'plateau-mesa': ['Relief', '#b8926a'], 'canyon-gorge': ['Relief', '#e08a4f'], 'karst': ['Relief', '#9fbf7f'],
+  'snowfield-glacier': ['Ice', '#e8f6ff'],
+  'lake': ['Water', '#4fb3ff'], 'reservoir': ['Water', '#38d1d1'], 'river': ['Water', '#6fa8ff'],
+  'delta': ['Water', '#4fd1a5'], 'wetland': ['Water', '#6fcf97'], 'coastline': ['Water', '#a9d8ff'],
+  'desert': ['Dry', '#f2c46d'], 'dune-field': ['Dry', '#f5d48a'], 'salt-flat': ['Dry', '#f4f1e8'],
+  'island': ['Islands', '#7fd6c2'], 'archipelago': ['Islands', '#7fd6c2'], 'reef-atoll': ['Islands', '#5ee0e6'],
+  'peninsula': ['Islands', '#9ccfb2'],
+  'forest-park': ['Human', '#5fbf5f'], 'agriculture': ['Human', '#b5d26b'], 'mine-quarry': ['Human', '#c58cff'],
+  'urban': ['Human', '#d0d0d0'], 'other': ['Other', '#bbbbbb'],
+};
+const GROUPS = ['Geologic', 'Relief', 'Ice', 'Water', 'Dry', 'Islands', 'Human', 'Other'];
+const MIN_PX = { 5: 26, 4: 38, 3: 56, 2: 85, 1: 130 };  // on-screen size needed before a label appears
+const catColor = c => (CATS[c] || CATS.other)[1];
+const catGroup = c => (CATS[c] || CATS.other)[0];
+
+const state = {
+  groups: new Set(GROUPS), backbone: true, labels: true, density: 1,
+  selected: null, hovered: null,
+};
+try { Object.assign(state, JSON.parse(localStorage.getItem('geolab.explorer') || '{}'), { selected: null, hovered: null }); state.groups = new Set(state.groups); } catch {}
+const persist = () => { try { localStorage.setItem('geolab.explorer', JSON.stringify({ ...state, groups: [...state.groups], selected: null, hovered: null })); } catch {} };
+
+const $ = id => document.getElementById(id);
+let map, features = [], layer, outline = [];
+
+async function main() {
+  const [gm, data] = await Promise.all([loadMaps(), loadJSON('../../data/build/features.json')]);
+  features = data.features;
+  for (const f of features) {
+    f.curated = !String(f.src || '').startsWith('ne:');
+    f._search = [f.name, ...(f.aka || [])].join(' | ').toLowerCase();
+    f._kind = !f.geometry ? 'pt' : /Line/.test(f.geometry.type) ? 'line' : 'area';
+    if (f._kind === 'line') f._anchors = lineAnchors(f.geometry, 16);
+  }
+  const start = parseHash() || { lat: 25, lng: 20, z: 3 };
+  map = new gm.Map($('map'), {
+    center: { lat: start.lat, lng: start.lng }, zoom: start.z, mapTypeId: 'satellite', tilt: 0,
+    disableDefaultUI: true, scaleControl: true, gestureHandling: 'greedy', clickableIcons: false,
+    isFractionalZoomEnabled: true, minZoom: 2, backgroundColor: '#000',
+    zoomControl: true, zoomControlOptions: { position: gm.ControlPosition.RIGHT_CENTER },
+  });
+  layer = makeLabelLayer(gm);
+  layer.setMap(map);
+  map.addListener('idle', () => { writeHash(); updateZoomInfo(); updateContext(); });
+  map.addListener('click', e => whatsHere(e.latLng.toJSON()));
+  $('status').remove();
+  buildFilters();
+  if (start.id) { const f = features.find(x => x.id === start.id); if (f) select(f, false); }
+  updateZoomInfo();
+}
+
+// ---------- label layer ----------
+function makeLabelLayer(gm) {
+  class LabelLayer extends gm.OverlayView {
+    onAdd() {
+      this.div = document.createElement('div');
+      this.div.style.position = 'absolute';
+      this.getPanes().overlayMouseTarget.appendChild(this.div);
+      this.pool = new Map();
+    }
+    draw() { scheduleDraw(this); }
+  }
+  return new LabelLayer();
+}
+
+let drawQueued = false;
+function scheduleDraw(L) {
+  if (drawQueued) return;
+  drawQueued = true;
+  requestAnimationFrame(() => { drawQueued = false; drawLabels(L); });
+}
+
+// Rivers get a fixed set of candidate anchors spread along their length; the
+// label uses the visible candidate closest to the middle of the river, so it
+// doesn't wander as you pan and zoom. Falls back to the nearest vertex when
+// zoomed in between candidates.
+function lineAnchors(g, n) {
+  const lines = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+  const pts = [];
+  for (const l of lines) for (const c of l) pts.push(c);
+  if (pts.length < 2) return pts.map(c => ({ lat: c[1], lng: c[0], t: 0.5 }));
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const c = pts[Math.round(i / n * (pts.length - 1))];
+    out.push({ lat: c[1], lng: c[0], t: i / n });
+  }
+  return out;
+}
+
+function labelAnchor(f, view) {
+  if (f._kind !== 'line') return { lat: f.lat, lng: f.lng };
+  const inset = { n: view.n - (view.n - view.s) * 0.06, s: view.s + (view.n - view.s) * 0.06, w: view.w, e: view.e };
+  let best = null;
+  for (const a of f._anchors) {
+    if (a.lat < inset.s || a.lat > inset.n || !lngIn(a.lng, view)) continue;
+    if (!best || Math.abs(a.t - 0.5) < Math.abs(best.t - 0.5)) best = a;
+  }
+  if (best) return best;
+  const c = view.center;
+  let bd = Infinity;
+  const walk = cs => {
+    if (typeof cs[0] === 'number') {
+      if (cs[1] < view.s || cs[1] > view.n || !lngIn(cs[0], view)) return;
+      const d = (cs[0] - c.lng) ** 2 + (cs[1] - c.lat) ** 2;
+      if (d < bd) { bd = d; best = { lat: cs[1], lng: cs[0] }; }
+    } else cs.forEach(walk);
+  };
+  walk(f.geometry.coordinates);
+  return best;
+}
+const lngIn = (lng, v) => v.w <= v.e ? lng >= v.w && lng <= v.e : lng >= v.w || lng <= v.e;
+
+// Typical visible width when a river has no width_km yet (by salience).
+const riverWidthKm = f => f.width_km || [0.3, 0.3, 0.6, 1.5, 3, 5][Math.max(0, Math.min(5, f.salience))];
+
+function visibleCandidates(z, view) {
+  const out = [];
+  const W = map.getDiv().clientWidth, H = map.getDiv().clientHeight, diag = Math.hypot(W, H);
+  const densityShift = Math.log2(state.density);  // >0 means fewer labels
+  for (const f of features) {
+    if (!state.groups.has(catGroup(f.category))) continue;
+    if (!f.curated && !state.backbone) continue;
+    // quick reject: feature box vs view
+    const b = f.bbox;
+    if (b) {
+      if (b[3] < view.s || b[1] > view.n) continue;
+      if (view.w <= view.e && (b[2] < view.w || b[0] > view.e)) continue;
+    } else {
+      const padLat = f.extent_km / 111;
+      if (f.lat < view.s - padLat || f.lat > view.n + padLat || !lngIn(f.lng, { w: view.w - padLat * 2, e: view.e + padLat * 2 })) continue;
+    }
+    const mpp = metersPerPx(f.lat, z);
+    const sizePx = f.extent_km * 1000 / mpp;
+    const sel = f === state.selected;
+    if (f.vis_zoom != null) {
+      // Measured prominence: the zoom where it starts to stand out.
+      if (z < f.vis_zoom + densityShift + (f.curated ? 0 : 0.5) && !sel) continue;
+    } else if (f._kind === 'line') {
+      // A river is only as visible as it is wide (length alone made e.g. the Arkansas too prominent).
+      const widthPx = riverWidthKm(f) * 1000 / mpp;
+      if ((widthPx < 1.6 * state.density || sizePx < 120) && !sel) continue;
+    } else {
+      const minPx = MIN_PX[Math.max(1, Math.min(5, f.salience))] * state.density * (f.curated ? 1 : 1.25);
+      if (sizePx < minPx && !sel) continue;
+    }
+    // too big: we're inside it (rivers never hide for size; areas get more headroom than points)
+    if (f._kind !== 'line' && sizePx > (f._kind === 'area' ? 7 : 3.5) * diag && !sel) continue;
+    out.push({ f, sizePx, prio: (sel ? 1e6 : 0) + f.salience * 10 + (f.curated ? 8 : 0) + Math.min(12, Math.log2(sizePx)) });
+  }
+  return out.sort((a, b) => b.prio - a.prio);
+}
+
+function drawLabels(L) {
+  if (!L.div) return;
+  const proj = L.getProjection();
+  if (!proj || !state.labels) { L.div.replaceChildren(); return; }
+  const bnds = map.getBounds(); if (!bnds) return;
+  const ne = bnds.getNorthEast(), sw = bnds.getSouthWest();
+  const view = { n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng(), center: map.getCenter().toJSON() };
+  const z = map.getZoom();
+  const boxes = [], frag = [];
+  for (const { f } of visibleCandidates(z, view)) {
+    if (frag.length > 140) break;
+    const a = labelAnchor(f, view);
+    if (!a) continue;
+    const p = proj.fromLatLngToDivPixel(new google.maps.LatLng(a.lat, a.lng));
+    const fs = f.salience >= 5 ? 15 : f.salience === 4 ? 14 : f.salience === 3 ? 13 : f.salience === 2 ? 12 : 11;
+    const w = f.name.length * fs * 0.58 + 18, h = fs + 6;
+    const isPt = f._kind !== 'area';  // points and rivers: dot on the spot, text to the right
+    const box = isPt ? [p.x - 6, p.y - h / 2, p.x + w - 6, p.y + h / 2] : [p.x - w / 2, p.y - h / 2, p.x + w / 2, p.y + h / 2];
+    if (boxes.some(o => box[0] < o[2] && box[2] > o[0] && box[1] < o[3] && box[3] > o[1])) continue;
+    boxes.push(box);
+    frag.push({ f, p });
+  }
+  const used = new Set();
+  for (const { f, p } of frag) {
+    let el = L.pool.get(f.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = `lbl s${Math.max(1, Math.min(5, f.salience))}${f.curated ? '' : ' backbone'}${f.marine ? ' marine' : ''} ${f._kind === 'area' ? 'area' : 'pt'}`;
+      el.innerHTML = `<span class="dot" style="background:${catColor(f.category)}"></span>`;
+      el.append(document.createTextNode(f.name));
+      el.addEventListener('click', ev => { ev.stopPropagation(); select(f); });
+      el.addEventListener('mouseenter', () => hover(f));
+      el.addEventListener('mouseleave', () => hover(null));
+      L.pool.set(f.id, el);
+    }
+    el.classList.toggle('sel', f === state.selected);
+    el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
+    if (el.parentNode !== L.div) L.div.appendChild(el);
+    used.add(f.id);
+  }
+  for (const [id, el] of L.pool) if (!used.has(id) && el.parentNode) el.remove();
+}
+const redraw = () => layer && scheduleDraw(layer);
+
+// ---------- outlines ----------
+function drawOutline(f, strong) {
+  for (const o of outline) o.setMap(null);
+  outline = [];
+  if (!f) return;
+  const style = { strokeColor: strong ? '#ffe27a' : '#ffffff', strokeOpacity: strong ? .95 : .7, strokeWeight: strong ? 2.5 : 1.5, clickable: false };
+  const g = f.geometry;
+  const ring = r => r.map(([lng, lat]) => ({ lat, lng }));
+  if (!g) {
+    outline.push(new google.maps.Circle({ map, center: { lat: f.lat, lng: f.lng }, radius: f.extent_km * 500, fillOpacity: 0, ...style }));
+  } else if (g.type === 'Polygon') {
+    outline.push(new google.maps.Polygon({ map, paths: g.coordinates.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
+  } else if (g.type === 'MultiPolygon') {
+    outline.push(new google.maps.Polygon({ map, paths: g.coordinates.flatMap(p => p.map(ring)), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
+  } else if (g.type === 'LineString') {
+    outline.push(new google.maps.Polyline({ map, path: ring(g.coordinates), ...style, strokeWeight: style.strokeWeight + 1 }));
+  } else if (g.type === 'MultiLineString') {
+    for (const l of g.coordinates) outline.push(new google.maps.Polyline({ map, path: ring(l), ...style, strokeWeight: style.strokeWeight + 1 }));
+  }
+}
+
+function hover(f) {
+  state.hovered = f;
+  if (f && f !== state.selected) drawOutline(f, false);
+  else drawOutline(state.selected, true);
+}
+
+// ---------- selection / info panel ----------
+const visited = new Set(JSON.parse(localStorage.getItem('geolab.explorer.visited') || '[]'));
+function markVisited(f) {
+  if (!f || visited.has(f.id)) return;
+  visited.add(f.id);
+  try { localStorage.setItem('geolab.explorer.visited', JSON.stringify([...visited])); } catch {}
+}
+
+function select(f, fly = false) {
+  markVisited(f);
+  state.selected = f;
+  drawOutline(f, true);
+  showInfo(f);
+  if (fly) flyTo(f);
+  writeHash();
+  redraw();
+}
+
+function flyTo(f) {
+  if (f.bbox && f.extent_km > 30) {
+    const [w, s, e, n] = f.bbox;
+    map.fitBounds({ west: w, south: s, east: e, north: n }, 60);
+  } else {
+    const W = map.getDiv().clientWidth;
+    map.setCenter({ lat: f.lat, lng: f.lng });
+    map.setZoom(Math.max(3, Math.min(18, zoomForKm(f.lat, f.extent_km * 2.2, W))));
+  }
+}
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function showInfo(f) {
+  const info = $('info');
+  if (!f) { info.classList.add('hidden'); return; }
+  const facts = [];
+  if (f.crater?.diameter_km) facts.push(`⌀ ${f.crater.diameter_km} km`);
+  if (f.crater?.age_ma) facts.push(`${f.crater.age_ma} Ma`);
+  if (f.lake?.area_km2) facts.push(`${Math.round(f.lake.area_km2).toLocaleString()} km²`);
+  if (f.lake?.rank) facts.push(`#${f.lake.rank} by area`);
+  if (f.elevation_m) facts.push(`${f.elevation_m.toLocaleString()} m`);
+  const src = (f.sources || []).slice(0, 3).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(new URL(u).hostname.replace('www.', ''))}</a>`).join(' · ');
+  info.innerHTML = `
+    <div class="row"><h2 class="grow">${esc(f.name)}</h2><button id="closeInfo" title="Close (Esc)">✕</button></div>
+    ${f.aka?.length ? `<div class="muted small">${esc(f.aka.join(' · '))}</div>` : ''}
+    <div class="meta row small">
+      <span class="tag" style="border-color:${catColor(f.category)}">${esc(f.category)}</span>
+      <span class="muted">~${fmtKm(f.extent_km)} across</span>
+      ${f.country ? `<span class="muted">${esc(f.country)}</span>` : ''}
+      ${facts.map(x => `<span class="muted">${esc(x)}</span>`).join('')}
+    </div>
+    ${f.description ? `<div class="desc">${esc(f.description)}</div>` : `<div class="desc muted small">Natural Earth ${esc((f.src || '').replace('ne:', ''))} feature (no curated description yet).</div>`}
+    ${f.look_for ? `<div class="look">👁 ${esc(f.look_for)}</div>` : ''}
+    <div class="row small"><button id="flyBtn">Zoom to fit</button>${src ? `<span class="muted">${src}</span>` : ''}</div>`;
+  info.classList.remove('hidden');
+  $('closeInfo').onclick = () => select(null);
+  $('flyBtn').onclick = () => flyTo(f);
+}
+
+// Distance (km) from p to a LineString/MultiLineString, local equirectangular approximation.
+function distToLineKm(p, g) {
+  const k = Math.cos(p.lat * Math.PI / 180) * 111.32, m = 111.32;
+  const lines = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+  let best = Infinity;
+  for (const l of lines) for (let i = 1; i < l.length; i++) {
+    const ax = (l[i - 1][0] - p.lng) * k, ay = (l[i - 1][1] - p.lat) * m;
+    const bx = (l[i][0] - p.lng) * k, by = (l[i][1] - p.lat) * m;
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// "Where am I?": areas containing the view center and rivers running near it.
+function updateContext() {
+  if (!map) return;
+  const c = map.getCenter().toJSON(), z = map.getZoom(), mpp = metersPerPx(c.lat, z);
+  const inside = [], near = [];
+  for (const f of features) {
+    if (!state.groups.has(catGroup(f.category)) || (!f.curated && !state.backbone) || f.marine) continue;
+    const b = f.bbox;
+    if (!b || c.lng < b[0] - 1 || c.lng > b[2] + 1 || c.lat < b[1] - 1 || c.lat > b[3] + 1) continue;
+    if (f._kind === 'area' && geometryContains(f.geometry, c.lng, c.lat)) inside.push(f);
+    else if (f._kind === 'line' && distToLineKm(c, f.geometry) <= Math.max(riverWidthKm(f) / 2 + 0.3, 60 * mpp / 1000)) near.push(f);
+  }
+  inside.sort((a, b) => a.extent_km - b.extent_km);
+  const el = $('context');
+  if (!inside.length && !near.length) { el.classList.add('hidden'); return; }
+  const link = f => `<b data-id="${esc(f.id)}">${esc(f.name)}</b>`;
+  el.innerHTML = (inside.length ? `📍 In ${inside.slice(0, 4).map(link).join(' › ')}` : '') +
+    (near.length ? `${inside.length ? ' · ' : '📍 '}near ${near.slice(0, 3).map(link).join(', ')}` : '');
+  el.classList.remove('hidden');
+  el.querySelectorAll('b').forEach(b => b.onclick = () => select(features.find(f => f.id === b.dataset.id)));
+}
+
+function whatsHere(p) {
+  const z = map.getZoom();
+  const mpp = metersPerPx(p.lat, z);
+  const hits = [];
+  for (const f of features) {
+    if (!state.groups.has(catGroup(f.category))) continue;
+    if (!f.curated && !state.backbone) continue;
+    const g = f.geometry;
+    let near = false;
+    if (g && /Polygon/.test(g.type)) {
+      const b = f.bbox;
+      if (b && p.lng >= b[0] && p.lng <= b[2] && p.lat >= b[1] && p.lat <= b[3]) near = geometryContains(g, p.lng, p.lat);
+    } else if (g && /LineString/.test(g.type)) {
+      // within the river's visible width (or ~12px when zoomed out)
+      const tolKm = Math.max(riverWidthKm(f) / 2 + 0.3, 12 * mpp / 1000);
+      const b = f.bbox, pad = tolKm / 100;
+      if (b && p.lng >= b[0] - pad && p.lng <= b[2] + pad && p.lat >= b[1] - pad && p.lat <= b[3] + pad)
+        near = distToLineKm(p, g) <= tolKm;
+    } else {
+      const dPx = haversineKm(p, f) * 1000 / mpp;
+      near = dPx < Math.max(14, f.extent_km * 500 / mpp);
+    }
+    if (near) hits.push(f);
+  }
+  // most specific first: small things, then rivers, then the big areas you're inside
+  const key = f => f._kind === 'line' ? 60 : f.extent_km;
+  hits.sort((a, b) => key(a) - key(b));
+  if (hits.length === 1) return select(hits[0]);
+  if (!hits.length) {
+    state.selected = null; drawOutline(null);
+    $('info').innerHTML = `<div class="row"><b class="grow">Nothing labeled here</b><button id="closeInfo">✕</button></div>
+      <div class="muted small">${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}. Know what this is? It might deserve a label.</div>`;
+    $('info').classList.remove('hidden');
+    $('closeInfo').onclick = () => select(null);
+    redraw();
+    return;
+  }
+  $('info').innerHTML = `<div class="row"><b class="grow">What's here? (${hits.length})</b><button id="closeInfo">✕</button></div>
+    <div class="here-list">${hits.slice(0, 12).map((f, i) =>
+      `<div data-i="${i}"><span class="legend-dot" style="background:${catColor(f.category)}"></span> ${esc(f.name)} <span class="muted small">${esc(f.category)} · ${fmtKm(f.extent_km)}</span></div>`).join('')}</div>`;
+  $('info').classList.remove('hidden');
+  $('closeInfo').onclick = () => select(null);
+  $('info').querySelectorAll('.here-list div').forEach(d => {
+    const f = hits[+d.dataset.i];
+    d.onclick = () => select(f);
+    d.onmouseenter = () => drawOutline(f, false);
+  });
+}
+
+// ---------- search ----------
+let hl = 0, lastResults = [];
+$('search').addEventListener('input', () => {
+  const q = $('search').value.trim().toLowerCase();
+  const box = $('results');
+  if (q.length < 2) { box.classList.add('hidden'); return; }
+  lastResults = features.filter(f => f._search.includes(q))
+    .sort((a, b) => (b._search.startsWith(q) - a._search.startsWith(q)) || (b.curated - a.curated) || (b.salience - a.salience))
+    .slice(0, 30);
+  hl = 0;
+  box.innerHTML = lastResults.map((f, i) =>
+    `<div data-i="${i}" class="${i === 0 ? 'hl' : ''}"><span class="legend-dot" style="background:${catColor(f.category)}"></span> ${esc(f.name)} <span class="muted small">${esc(f.category)}${f.country ? ' · ' + esc(f.country) : ''}</span></div>`).join('') ||
+    '<div class="muted">No matches</div>';
+  box.classList.remove('hidden');
+  box.querySelectorAll('[data-i]').forEach(d => d.onclick = () => chooseResult(+d.dataset.i));
+});
+$('search').addEventListener('keydown', e => {
+  const box = $('results');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    hl = Math.max(0, Math.min(lastResults.length - 1, hl + (e.key === 'ArrowDown' ? 1 : -1)));
+    box.querySelectorAll('[data-i]').forEach(d => d.classList.toggle('hl', +d.dataset.i === hl));
+  } else if (e.key === 'Enter' && lastResults.length) chooseResult(hl);
+  else if (e.key === 'Escape') { box.classList.add('hidden'); $('search').blur(); }
+});
+function chooseResult(i) {
+  const f = lastResults[i];
+  $('results').classList.add('hidden');
+  $('search').value = f.name;
+  $('search').blur();
+  select(f, true);
+}
+
+// ---------- filters / toolbar ----------
+function buildFilters() {
+  const el = $('filters');
+  el.innerHTML = `<div class="small muted" style="margin-bottom:4px">Show categories</div>` +
+    GROUPS.map(g => {
+      const color = Object.values(CATS).find(c => c[0] === g)[1];
+      return `<label><input type="checkbox" data-g="${g}" ${state.groups.has(g) ? 'checked' : ''}><span class="legend-dot" style="background:${color}"></span>${g}</label>`;
+    }).join('') +
+    `<div style="margin-top:8px"><label><input type="checkbox" id="bbToggle" ${state.backbone ? 'checked' : ''}> Include Natural Earth backbone (uncurated, italic)</label></div>
+     <div class="row small" style="margin-top:6px"><span class="muted">Label density</span>
+       <input id="density" type="range" min="0.5" max="2" step="0.1" value="${2.5 - state.density}" class="grow"></div>
+     <div class="small muted" style="margin-top:6px">${features.filter(f => f.curated).length} curated · ${features.filter(f => !f.curated).length} backbone features</div>`;
+  el.querySelectorAll('[data-g]').forEach(cb => cb.onchange = () => {
+    cb.checked ? state.groups.add(cb.dataset.g) : state.groups.delete(cb.dataset.g);
+    persist(); redraw();
+  });
+  $('bbToggle').onchange = e => { state.backbone = e.target.checked; persist(); redraw(); };
+  $('density').oninput = e => { state.density = 2.5 - +e.target.value; persist(); redraw(); };
+}
+$('filterBtn').onclick = () => $('filters').classList.toggle('open');
+$('labelsBtn').onclick = toggleLabels;
+function toggleLabels() {
+  state.labels = !state.labels;
+  $('labelsBtn').textContent = `Labels: ${state.labels ? 'on' : 'off'}`;
+  persist(); redraw();
+}
+$('surprise').onclick = surprise;
+$('nearBtn').onclick = nearby;
+function nearby() {
+  // Nearest curated, reasonably salient feature not yet visited, ignoring ones already in view-sized range.
+  const c = map.getCenter().toJSON();
+  let best = null, bd = Infinity;
+  for (const f of features) {
+    if (!f.curated || f.salience < 3 || visited.has(f.id) || f === state.selected) continue;
+    if (!state.groups.has(catGroup(f.category))) continue;
+    const d = haversineKm(c, f);
+    if (d < bd) { bd = d; best = f; }
+  }
+  if (best) select(best, true);
+}
+function surprise() {
+  const pool = features.filter(f => f.curated && f.salience >= 4 && state.groups.has(catGroup(f.category)));
+  const f = pick(pool.length ? pool : features.filter(f => f.salience >= 3));
+  select(f, true);
+}
+
+function updateZoomInfo() {
+  const z = map.getZoom(), c = map.getCenter();
+  const km = metersPerPx(c.lat(), z) * map.getDiv().clientWidth / 1000;
+  $('zoomInfo').textContent = `z ${z.toFixed(1)} · screen ≈ ${fmtKm(km)} across`;
+}
+
+// ---------- keyboard + URL ----------
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === '/') { e.preventDefault(); $('search').focus(); $('search').select(); }
+  else if (e.key === 'Escape') select(null);
+  else if (e.key === 'r' || e.key === 'R') surprise();
+  else if (e.key === 'n' || e.key === 'N') nearby();
+  else if (e.key === 'l' || e.key === 'L') toggleLabels();
+});
+
+function parseHash() {
+  const m = location.hash.match(/^#(-?[\d.]+),(-?[\d.]+),([\d.]+)z(?:\/(.+))?$/);
+  return m ? { lat: +m[1], lng: +m[2], z: +m[3], id: m[4] && decodeURIComponent(m[4]) } : null;
+}
+function writeHash() {
+  if (!map) return;
+  const c = map.getCenter();
+  history.replaceState(null, '', `#${c.lat().toFixed(4)},${c.lng().toFixed(4)},${map.getZoom().toFixed(1)}z${state.selected ? '/' + encodeURIComponent(state.selected.id) : ''}`);
+}
+
+main().catch(err => { console.error(err); $('status').textContent = 'Failed to load: ' + err.message; });
+</script>
+</body>
+</html>

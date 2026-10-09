@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geo Lab</title>
+<link rel="stylesheet" href="lib/ui.css">
+<style>
+  body { padding: 32px 16px 48px; }
+  main { max-width: 980px; margin: 0 auto; }
+  header { margin-bottom: 24px; }
+  header h1 { font-size: 30px; letter-spacing: -.01em; }
+  header p { color: var(--muted); max-width: 640px; margin: 4px 0 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .card { display: flex; flex-direction: column; gap: 6px; background: var(--panel-solid); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 18px; color: var(--text); text-decoration: none; transition: border-color .15s, transform .15s; }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card h2 { font-size: 18px; margin: 0; display: flex; gap: 8px; align-items: center; }
+  .card p { color: var(--muted); margin: 0; font-size: 13px; }
+  .card .meta { margin-top: auto; padding-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .emoji { font-size: 22px; }
+  .section { margin: 26px 0 10px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .due { color: var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🛰️ Geo Lab</h1>
+    <p>Satellite-view geography games built around visually distinctive physical geography: things you would notice from orbit and wonder about.</p>
+  </header>
+
+  <div class="section">Explore</div>
+  <div class="grid">
+    <a class="card" href="apps/explorer/">
+      <h2><span class="emoji">🗺️</span>Feature explorer</h2>
+      <p>Satellite view with labels for craters, odd reservoirs, dune seas, mines, ranges and rivers, not roads and towns. Click anything to ask "what's that?"</p>
+      <div class="meta" id="mExplorer"></div>
+    </a>
+    <a class="card" href="apps/geoguessr/">
+      <h2><span class="emoji">🎯</span>Satellite geoguessr</h2>
+      <p>The original: a random spot on land at a random rotation. Zoom out as little as you can, then drop a pin.</p>
+    </a>
+  </div>
+
+  <div class="section">Learn (spaced repetition)</div>
+  <div class="grid">
+    <a class="card" href="apps/quiz/?deck=craters">
+      <h2><span class="emoji">☄️</span>Impact craters</h2>
+      <p>Every impact structure you can actually see from orbit, plus some circular lookalikes to keep you honest.</p>
+      <div class="meta" id="mCraters"></div>
+    </a>
+    <a class="card" href="apps/quiz/?deck=lakes">
+      <h2><span class="emoji">💧</span>Major lakes</h2>
+      <p>The world's largest lakes and reservoirs, in top 20/50/100/150 tiers, each shown at a random rotation and scale.</p>
+      <div class="meta" id="mLakes"></div>
+    </a>
+  </div>
+
+  <div class="section">Classify</div>
+  <div class="grid">
+    <a class="card" href="apps/classify/?mode=jungles">
+      <h2><span class="emoji">🌳</span>Amazon · Congo · SE Asia</h2>
+      <p>Tell the three great rainforests apart from canopy, rivers and land use alone.</p>
+      <div class="meta" id="mJungles"></div>
+    </a>
+    <a class="card" href="apps/classify/?mode=cities">
+      <h2><span class="emoji">🏙️</span>City from above</h2>
+      <p>Close-up urban fabric. Name the country, or at least get the region right.</p>
+      <div class="meta" id="mCities"></div>
+    </a>
+  </div>
+</main>
+<script>
+  // Show progress badges from each app's localStorage.
+  const get = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+  const pill = (html, cls = '') => `<span class="pill ${cls}">${html}</span>`;
+  function srsBadge(deck, el) {
+    const d = get('geolab.srs.' + deck); if (!d) return;
+    const now = Date.now(), cards = Object.values(d.cards || {});
+    const due = cards.filter(c => c.due <= now).length, learned = cards.filter(c => c.reps > 0).length;
+    document.getElementById(el).innerHTML = (due ? pill(`<b>${due}</b> due`, 'due') : '') + pill(`<b>${learned}</b> learned`) + pill(`<b>${cards.length}</b> seen`);
+  }
+  function clsBadge(mode, el) {
+    const s = get('geolab.classify.' + mode); if (!s || !s.n) return;
+    document.getElementById(el).innerHTML = pill(`<b>${Math.round(100 * s.score / s.n)}%</b> of ${s.n}`);
+  }
+  srsBadge('craters', 'mCraters'); srsBadge('lakes', 'mLakes');
+  clsBadge('jungles', 'mJungles'); clsBadge('cities', 'mCities');
+  fetch('data/build/features.json').then(r => r.json()).then(d => {
+    document.getElementById('mExplorer').innerHTML = pill(`<b>${d.meta.curated}</b> curated`) + pill(`<b>${d.meta.backbone}</b> backbone`);
+  }).catch(() => {});
+</script>
+</body>
+</html>
