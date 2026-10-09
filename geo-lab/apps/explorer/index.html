@@ -392,7 +392,7 @@ function updateContext() {
   for (const f of features) {
     if (!state.groups.has(catGroup(f.category)) || (!f.curated && !state.backbone) || f.marine) continue;
     const b = f.bbox;
-    if (!b || c.lng < b[0] - 1 || c.lng > b[2] + 1 || c.lat < b[1] - 1 || c.lat > b[3] + 1) continue;
+    if (!f.geometry || (b && (c.lng < b[0] - 1 || c.lng > b[2] + 1 || c.lat < b[1] - 1 || c.lat > b[3] + 1))) continue;
     if (f._kind === 'area' && geometryContains(f.geometry, c.lng, c.lat)) inside.push(f);
     else if (f._kind === 'line' && distToLineKm(c, f.geometry) <= Math.max(riverWidthKm(f) / 2 + 0.3, 60 * mpp / 1000)) near.push(f);
   }
@@ -417,12 +417,13 @@ function whatsHere(p) {
     let near = false;
     if (g && /Polygon/.test(g.type)) {
       const b = f.bbox;
-      if (b && p.lng >= b[0] && p.lng <= b[2] && p.lat >= b[1] && p.lat <= b[3]) near = geometryContains(g, p.lng, p.lat);
+      // (features split at the 180th meridian have no bbox: test them directly)
+      if (!b || (p.lng >= b[0] && p.lng <= b[2] && p.lat >= b[1] && p.lat <= b[3])) near = geometryContains(g, p.lng, p.lat);
     } else if (g && /LineString/.test(g.type)) {
       // within the river's visible width (or ~12px when zoomed out)
       const tolKm = Math.max(riverWidthKm(f) / 2 + 0.3, 12 * mpp / 1000);
       const b = f.bbox, pad = tolKm / 100;
-      if (b && p.lng >= b[0] - pad && p.lng <= b[2] + pad && p.lat >= b[1] - pad && p.lat <= b[3] + pad)
+      if (!b || (p.lng >= b[0] - pad && p.lng <= b[2] + pad && p.lat >= b[1] - pad && p.lat <= b[3] + pad))
         near = distToLineKm(p, g) <= tolKm;
     } else {
       const dPx = haversineKm(p, f) * 1000 / mpp;
