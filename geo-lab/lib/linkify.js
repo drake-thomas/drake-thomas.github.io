@@ -10,6 +10,8 @@ const STOP = new Set(['orange', 'white', 'black', 'blue', 'green', 'yellow', 're
   'north', 'south', 'east', 'west', 'central', 'salt', 'pink', 'golden', 'silver', 'long', 'deep', 'dry', 'high', 'new',
   'snake', 'pearl', 'paradise', 'victoria', 'georgia', 'jordan', 'chad', 'niger', 'congo', 'guinea', 'sudan', 'lake', 'river',
   'island', 'islands', 'mountain', 'mountains', 'desert', 'bay', 'gulf', 'sea', 'ocean', 'plain', 'plateau', 'range', 'valley']);
+const TYPE_WORDS = new Set(['island', 'islands', 'bay', 'gulf', 'sea', 'lake', 'lakes', 'river', 'mountains', 'mountain', 'range',
+  'desert', 'peninsula', 'plateau', 'reservoir', 'strait', 'basin', 'delta', 'lagoon', 'valley', 'plain', 'glacier', 'ice', 'sound', 'canyon']);
 const norm = s => s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[’']/g, "'").replace(/[^a-z0-9' -]+/g, ' ').replace(/\s+/g, ' ').trim();
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const km = (a, b) => {
@@ -68,6 +70,9 @@ export class Linkifier {
         const k = norm(span);
         if (selfNames.has(k)) { hit = { n, skip: true }; break; }
         const fs = this.byName.get(k);
+        // A short name followed by a type word ("Baffin" + "Island") is a different feature: don't link the fragment.
+        const nextWord = words[i + n]?.[0]?.toLowerCase();
+        if (fs && nextWord && TYPE_WORDS.has(nextWord) && !this.byName.has(norm(span + ' ' + nextWord))) { hit = { n: n + 1, skip: true }; break; }
         if (fs) {
           const f = this._pickFeature(fs, self);
           if (f && !usedF.has(f.id)) hit = { n, span, html: `<a class="flink" data-fid="${esc(f.id)}" title="${esc(f.name)}">${esc(span)}</a>`, mark: () => usedF.add(f.id) };
