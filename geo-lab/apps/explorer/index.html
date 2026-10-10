@@ -52,6 +52,13 @@
   .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   #toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
   #toolbar button { padding: 6px 10px; font-size: 13px; }
+  #fb textarea { width: 100%; margin: 6px 0; font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; padding: 6px 8px; resize: vertical; }
+  #fb .row button { padding: 5px 8px; font-size: 12px; }
+  #fb button.on { background: #ffe27a; color: #1a1500; border-color: transparent; }
+  #fbQueue { cursor: pointer; text-decoration: underline dotted; }
+  #lassoLayer { position: fixed; inset: 0; z-index: 9; cursor: crosshair; display: none; }
+  #lassoLayer.active { display: block; }
+  #lassoLayer svg { width: 100%; height: 100%; }
   #zoomInfo { position: fixed; right: 12px; bottom: 28px; z-index: 10; font-size: 12px; }
   @media (max-width: 640px) {
     #side { width: auto; right: 12px; }
@@ -71,14 +78,28 @@
     <button id="surprise" title="Jump to a random distinctive feature (R)">🎲 Surprise me</button>
     <button id="nearBtn" title="Nearest interesting feature you haven't visited (N)">➜ Nearby</button>
     <button id="filterBtn">Filters</button>
+    <button id="fbBtn" title="Report a wrong outline or ask about an unlabeled thing">✎ Feedback</button>
     <button id="labelsBtn" title="Toggle labels (L)">Labels: on</button>
     <a class="btn" href="../../" style="padding:6px 10px;font-size:13px">⌂</a>
   </div>
   <div id="filters" class="panel"></div>
+  <div id="fb" class="panel hidden">
+    <div class="row"><b class="grow" id="fbTitle">Feedback</b><button id="fbClose" title="Close">✕</button></div>
+    <div class="small muted" id="fbHelp"></div>
+    <div class="row" style="margin-top:6px">
+      <button id="fbIn" title="Click points that should be inside the selected feature (I)">+ inside (I)</button>
+      <button id="fbOut" title="Click points that should NOT be inside it (O)">− outside (O)</button>
+      <button id="fbLasso" title="Draw a loop around something unlabeled (W)">◯ what's this? (W)</button>
+    </div>
+    <textarea id="fbNote" rows="2" placeholder="Optional note (what's wrong, what you think it is…)"></textarea>
+    <div class="row"><button class="primary" id="fbSend">Send</button><button id="fbClear">Clear</button>
+      <span class="grow"></span><span id="fbQueue" class="small muted" title="Click to copy queued feedback"></span></div>
+  </div>
   <div id="info" class="panel hidden"></div>
 </div>
 <div id="zoomInfo" class="panel muted"></div>
 <div id="context" class="panel muted hidden"></div>
+<div id="lassoLayer"><svg><path id="lassoPath" fill="rgba(255,226,122,.15)" stroke="#ffe27a" stroke-width="2.5"/></svg></div>
 <div id="status" class="status">Loading…</div>
 
 <script type="module">
@@ -137,7 +158,7 @@ async function main() {
   layer = makeLabelLayer(gm);
   layer.setMap(map);
   map.addListener('idle', () => { writeHash(); updateZoomInfo(); updateContext(); });
-  map.addListener('click', e => whatsHere(e.latLng.toJSON()));
+  map.addListener('click', e => { if (fbPointClick(e.latLng.toJSON())) return; whatsHere(e.latLng.toJSON()); });
   $('status').remove();
   buildFilters();
   if (start.id) { const f = features.find(x => x.id === start.id); if (f) select(f, false); }
@@ -578,11 +599,111 @@ function updateZoomInfo() {
   $('zoomInfo').textContent = `z ${z.toFixed(1)} · screen ≈ ${fmtKm(km)} across`;
 }
 
+// ---------- feedback: polygon corrections + "what's this?" lassos ----------
+// Locally the dev server stores them in data/feedback/*.jsonl; on the static site they queue in
+// localStorage and can be copied with one click.
+const fb = { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [] };
+const FB_KEY = 'geolab.feedback.queue';
+const fbQueue = () => { try { return JSON.parse(localStorage.getItem(FB_KEY) || '[]'); } catch { return []; } };
+function fbRefresh() {
+  const q = fbQueue();
+  $('fbQueue').textContent = q.length ? `${q.length} queued · copy` : '';
+  for (const [id, m] of [['fbIn', 'in'], ['fbOut', 'out'], ['fbLasso', 'lasso']]) $(id).classList.toggle('on', fb.mode === m);
+  $('fbTitle').textContent = fb.target ? `Feedback · ${fb.target.name}` : (fb.lasso ? "What's this?" : 'Feedback');
+  $('fbHelp').textContent = fb.mode === 'in' ? 'Click spots that should be inside this feature.'
+    : fb.mode === 'out' ? 'Click spots that are wrongly inside this feature.'
+    : fb.mode === 'lasso' ? 'Drag a loop around the thing you want identified.'
+    : `${fb.inPts.length} inside · ${fb.outPts.length} outside${fb.lasso ? ' · 1 loop' : ''}. Select a feature for I/O, or use W anywhere.`;
+  $('lassoLayer').classList.toggle('active', fb.mode === 'lasso');
+}
+function fbOpen() { $('fb').classList.remove('hidden'); fbRefresh(); }
+function fbSetMode(m) {
+  fbOpen();
+  if ((m === 'in' || m === 'out') && !state.selected) { $('fbHelp').textContent = 'Select a feature first (click its label), then press I or O.'; return; }
+  if (m === 'in' || m === 'out') fb.target = state.selected;
+  fb.mode = fb.mode === m ? null : m;
+  fbRefresh();
+}
+function fbPointClick(p) {
+  if (fb.mode !== 'in' && fb.mode !== 'out') return false;
+  (fb.mode === 'in' ? fb.inPts : fb.outPts).push([+p.lat.toFixed(5), +p.lng.toFixed(5)]);
+  fb.shapes.push(new google.maps.Marker({ map, position: p, clickable: false, label: { text: fb.mode === 'in' ? '+' : '−', color: '#000', fontWeight: '700' },
+    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: fb.mode === 'in' ? '#5ad17a' : '#ff6b6b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 1.5 } }));
+  fbRefresh();
+  return true;
+}
+function fbClear() {
+  fb.shapes.forEach(s => s.setMap(null));
+  Object.assign(fb, { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [] });
+  $('fbNote').value = '';
+  fbRefresh();
+}
+async function fbSend() {
+  if (!fb.inPts.length && !fb.outPts.length && !fb.lasso && !$('fbNote').value.trim()) { $('fbHelp').textContent = 'Nothing to send yet.'; return; }
+  const c = map.getCenter();
+  const item = {
+    type: fb.lasso ? 'request' : 'correction', ts: new Date().toISOString(),
+    feature_id: fb.target?.id || null, feature_name: fb.target?.name || null,
+    include: fb.inPts, exclude: fb.outPts, lasso: fb.lasso, note: $('fbNote').value.trim(),
+    view: { lat: +c.lat().toFixed(4), lng: +c.lng().toFixed(4), z: +map.getZoom().toFixed(1) }, url: location.href,
+  };
+  let stored = false;
+  try {
+    const r = await fetch('../../api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
+    stored = r.ok;
+  } catch {}
+  if (!stored) { const q = fbQueue(); q.push(item); try { localStorage.setItem(FB_KEY, JSON.stringify(q)); } catch {} }
+  fbClear();
+  $('fbHelp').textContent = stored ? 'Sent ✓' : 'Saved here ✓. Click "queued · copy" to copy it all and paste it to Claude.';
+}
+async function fbCopy() {
+  const q = fbQueue();
+  if (!q.length) return;
+  const text = q.map(x => JSON.stringify(x)).join('\n');
+  try { await navigator.clipboard.writeText(text); } catch {}
+  if (confirmClear()) localStorage.removeItem(FB_KEY);
+  fbRefresh();
+  $('fbHelp').textContent = `Copied ${q.length} item${q.length > 1 ? 's' : ''}. Paste it into the chat with Claude.`;
+}
+const confirmClear = () => true;  // copying hands them off; the clipboard holds the only copy afterwards
+// freehand lasso
+(() => {
+  let pts = null;
+  const layer = $('lassoLayer'), path = $('lassoPath');
+  const draw = () => path.setAttribute('d', pts?.length ? 'M' + pts.map(p => p.join(',')).join('L') + 'Z' : '');
+  layer.addEventListener('pointerdown', e => { pts = [[e.clientX, e.clientY]]; layer.setPointerCapture(e.pointerId); draw(); });
+  layer.addEventListener('pointermove', e => { if (!pts) return; const l = pts[pts.length - 1]; if (Math.hypot(e.clientX - l[0], e.clientY - l[1]) > 4) { pts.push([e.clientX, e.clientY]); draw(); } });
+  layer.addEventListener('pointerup', () => {
+    if (!pts || pts.length < 5) { pts = null; draw(); return; }
+    const proj = layer_projection();
+    const rect = map.getDiv().getBoundingClientRect();
+    const ll = pts.map(([x, y]) => proj.fromContainerPixelToLatLng(new google.maps.Point(x - rect.left, y - rect.top)).toJSON());
+    fb.lasso = ll.map(p => [+p.lat.toFixed(5), +p.lng.toFixed(5)]);
+    fb.shapes.push(new google.maps.Polygon({ map, paths: ll, strokeColor: '#ffe27a', strokeWeight: 2.5, fillColor: '#ffe27a', fillOpacity: 0.12, clickable: false }));
+    pts = null; draw();
+    fb.mode = null; fb.target = null;
+    fbRefresh();
+    $('fbNote').focus();
+  });
+})();
+const layer_projection = () => layer.getProjection();
+$('fbBtn').onclick = () => $('fb').classList.contains('hidden') ? fbOpen() : $('fb').classList.add('hidden');
+$('fbClose').onclick = () => { fb.mode = null; $('fb').classList.add('hidden'); fbRefresh(); };
+$('fbIn').onclick = () => fbSetMode('in');
+$('fbOut').onclick = () => fbSetMode('out');
+$('fbLasso').onclick = () => fbSetMode('lasso');
+$('fbSend').onclick = fbSend;
+$('fbClear').onclick = fbClear;
+$('fbQueue').onclick = fbCopy;
+
 // ---------- keyboard + URL ----------
 addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === '/') { e.preventDefault(); $('search').focus(); $('search').select(); }
-  else if (e.key === 'Escape') select(null);
+  else if (e.key === 'Escape') { if (fb.mode) { fb.mode = null; fbRefresh(); } else select(null); }
+  else if (e.key === 'i' || e.key === 'I') fbSetMode('in');
+  else if (e.key === 'o' || e.key === 'O') fbSetMode('out');
+  else if (e.key === 'w' || e.key === 'W') fbSetMode('lasso');
   else if (e.key === 'r' || e.key === 'R') surprise();
   else if (e.key === 'n' || e.key === 'N') nearby();
   else if (e.key === 'l' || e.key === 'L') toggleLabels();
