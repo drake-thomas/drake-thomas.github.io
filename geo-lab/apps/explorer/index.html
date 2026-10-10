@@ -645,7 +645,7 @@ async function fbSend() {
     type: fb.lasso ? 'request' : 'correction', ts: new Date().toISOString(),
     feature_id: fb.target?.id || null, feature_name: fb.target?.name || null,
     include: fb.inPts, exclude: fb.outPts, lasso: fb.lasso, note: $('fbNote').value.trim(),
-    view: { lat: +c.lat().toFixed(4), lng: +c.lng().toFixed(4), z: +map.getZoom().toFixed(1) }, url: location.href,
+    view: { lat: +c.lat().toFixed(4), lng: +wrapLng(c.lng()).toFixed(4), z: +map.getZoom().toFixed(1) }, url: location.href,
   };
   let stored = false;
   try {
@@ -709,6 +709,8 @@ addEventListener('keydown', e => {
   else if (e.key === 'l' || e.key === 'L') toggleLabels();
 });
 
+const wrapLng = x => ((x + 180) % 360 + 360) % 360 - 180;  // the map can report 597° after panning around the globe
+
 function parseHash() {
   const m = location.hash.match(/^#(-?[\d.]+),(-?[\d.]+),([\d.]+)z(?:\/(.+))?$/);
   return m ? { lat: +m[1], lng: +m[2], z: +m[3], id: m[4] && decodeURIComponent(m[4]) } : null;
@@ -716,7 +718,7 @@ function parseHash() {
 function writeHash() {
   if (!map) return;
   const c = map.getCenter();
-  history.replaceState(null, '', `#${c.lat().toFixed(4)},${c.lng().toFixed(4)},${map.getZoom().toFixed(1)}z${state.selected ? '/' + encodeURIComponent(state.selected.id) : ''}`);
+  history.replaceState(null, '', `#${c.lat().toFixed(4)},${wrapLng(c.lng()).toFixed(4)},${map.getZoom().toFixed(1)}z${state.selected ? '/' + encodeURIComponent(state.selected.id) : ''}`);
 }
 
 main().catch(err => { console.error(err); $('status').textContent = 'Failed to load: ' + err.message; });
