@@ -18,7 +18,7 @@ export function loadMaps() {
 }
 
 export async function loadJSON(url) {
-  const r = await fetch(url);
+  const r = await fetch(url, { cache: 'no-cache' });
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
   return r.json();
 }

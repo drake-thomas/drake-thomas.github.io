@@ -71,3 +71,21 @@ input[type=text], input[type=search], select { font: inherit; color: var(--text)
   .hud { gap: 10px; padding: 6px 10px; }
   .hud .v { font-size: 15px; }
 }
+
+/* Description hypertext (lib/linkify.js) */
+a.flink { color: #9fd8ff; text-decoration: none; border-bottom: 1px solid rgba(159, 216, 255, .45); cursor: pointer; }
+a.flink:hover { color: #ffe27a; border-bottom-color: #ffe27a; }
+a.glink { color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(255, 255, 255, .55); cursor: help; }
+a.glink:hover { color: #ffe27a; border-bottom-color: #ffe27a; }
+
+/* Wikipedia side panel (lib/wikipanel.js) */
+.wikipanel { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); z-index: 60; display: flex; flex-direction: column;
+  background: var(--panel-solid); border-left: 1px solid var(--line); box-shadow: -8px 0 30px rgba(0,0,0,.5);
+  transform: translateX(105%); transition: transform .22s ease; }
+.wikipanel.open { transform: none; }
+.wikipanel .wp-head { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.wikipanel .wp-title { flex: 1; font-size: 16px; }
+.wikipanel .wp-open { padding: 4px 10px; font-size: 12px; }
+.wikipanel .wp-summary { padding: 10px 14px; font-size: 13px; color: var(--muted); display: flex; gap: 10px; max-height: 32vh; overflow: auto; }
+.wikipanel .wp-summary img { width: 96px; height: 96px; object-fit: cover; border-radius: 6px; flex: none; }
+.wikipanel .wp-frame { flex: 1; border: 0; background: #fff; }

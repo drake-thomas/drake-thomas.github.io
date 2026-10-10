@@ -99,6 +99,8 @@ import { SatView } from '../../lib/satview.js';
 import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { SRS, GRADES } from '../../lib/srs.js';
 import { zoomForKm, offsetKm, fmtKm, shuffle, rand, pick } from '../../lib/geo.js';
+import { Linkifier } from '../../lib/linkify.js';
+import { openWiki } from '../../lib/wikipanel.js';
 
 // ---------- deck definitions ----------
 const DECKS = {
@@ -184,7 +186,7 @@ const settings = Object.assign({ newPerDay: 10, mode: 'choice', tier: 50 }, JSON
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 
 const $ = id => document.getElementById(id);
-let sv, srs, all = [], cards = [], byId = {}, cur = null, streak = 0, mini, miniMarker, overlays = [];
+let sv, srs, all = [], cards = [], byId = {}, cur = null, streak = 0, mini, miniMarker, overlays = [], linker;
 
 async function main() {
   $('hDeck').textContent = deck.title;
@@ -192,6 +194,7 @@ async function main() {
   sv = new SatView($('sv'), { onZoom: z => updateZoomButtons() });
   const data = await loadJSON(params.get('data') || '../../data/build/features.json');  // ?data= for dev fixtures
   all = data.features;
+  linker = new Linkifier(all, await loadJSON('../../data/glossary.json').catch(() => ({})));
   await sv.ready;
   buildDeck();
   $('status').remove();
@@ -375,8 +378,11 @@ function showReveal(f) {
   $('rName').textContent = f.name;
   $('rAka').textContent = (f.aka || []).join(' · ');
   $('rFacts').textContent = deck.facts(f).filter(Boolean).join(' · ');
-  $('rDesc').textContent = f.description || '';
-  $('rLook').textContent = f.look_for ? '👁 ' + f.look_for : '';
+  $('rDesc').innerHTML = linker.html(f.description || '', f);
+  $('rLook').innerHTML = f.look_for ? '👁 ' + linker.html(f.look_for, f) : '';
+  for (const el of [$('rDesc'), $('rLook')]) linker.bind(el, {
+    onFeature: id => { const g = all.find(x => x.id === id); if (g) window.open(`../explorer/#${g.lat.toFixed(4)},${g.lng.toFixed(4)},8z/${encodeURIComponent(id)}`, '_blank'); },
+    onTerm: openWiki });
   drawFeatureOutline(f);
   showMini(f);
 }

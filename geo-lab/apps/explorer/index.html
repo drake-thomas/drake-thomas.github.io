@@ -83,6 +83,8 @@
 <script type="module">
 import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { metersPerPx, zoomForKm, geometryContains, fmtKm, haversineKm, pick } from '../../lib/geo.js';
+import { Linkifier } from '../../lib/linkify.js';
+import { openWiki } from '../../lib/wikipanel.js';
 
 const CATS = {  // category -> [group, color]
   'impact-crater': ['Geologic', '#ff7a59'], 'geologic-structure': ['Geologic', '#ff9f68'],
@@ -110,11 +112,13 @@ try { Object.assign(state, JSON.parse(localStorage.getItem('geolab.explorer') ||
 const persist = () => { try { localStorage.setItem('geolab.explorer', JSON.stringify({ ...state, groups: [...state.groups], selected: null, hovered: null })); } catch {} };
 
 const $ = id => document.getElementById(id);
-let map, features = [], layer, outline = [];
+let map, features = [], layer, outline = [], linker;
 
 async function main() {
-  const [gm, data] = await Promise.all([loadMaps(), loadJSON('../../data/build/features.json')]);
+  const [gm, data, glossary] = await Promise.all([loadMaps(), loadJSON('../../data/build/features.json'),
+    loadJSON('../../data/glossary.json').catch(() => ({}))]);
   features = data.features;
+  linker = new Linkifier(features, glossary);
   for (const f of features) {
     f.curated = !String(f.src || '').startsWith('ne:');
     f._search = [f.name, ...(f.aka || [])].join(' | ').toLowerCase();
@@ -372,12 +376,18 @@ function showInfo(f) {
       ${f.country ? `<span class="muted">${esc(f.country)}</span>` : ''}
       ${facts.map(x => `<span class="muted">${esc(x)}</span>`).join('')}
     </div>
-    ${f.description ? `<div class="desc">${esc(f.description)}</div>` : `<div class="desc muted small">Natural Earth ${esc((f.src || '').replace('ne:', ''))} feature (no curated description yet).</div>`}
-    ${f.look_for ? `<div class="look">👁 ${esc(f.look_for)}</div>` : ''}
+    ${f.description ? `<div class="desc">${linker.html(f.description, f)}</div>` : `<div class="desc muted small">Natural Earth ${esc((f.src || '').replace('ne:', ''))} feature (no curated description yet).</div>`}
+    ${f.look_for ? `<div class="look">👁 ${linker.html(f.look_for, f)}</div>` : ''}
     <div class="row small"><button id="flyBtn">Zoom to fit</button>${src ? `<span class="muted">${src}</span>` : ''}</div>`;
   info.classList.remove('hidden');
   $('closeInfo').onclick = () => select(null);
   $('flyBtn').onclick = () => flyTo(f);
+  // links in the description: other features fly+select, jargon opens the Wikipedia panel
+  linker.bind(info, { onFeature: id => { const g = features.find(x => x.id === id); if (g) select(g, true); }, onTerm: openWiki });
+  // the feature's own Wikipedia source opens in the panel too
+  info.querySelectorAll('a[href*="wikipedia.org/wiki/"]').forEach(a => a.onclick = e => {
+    e.preventDefault(); openWiki(decodeURIComponent(a.href.split('/wiki/')[1]).replace(/_/g, ' '));
+  });
 }
 
 // Distance (km) from p to a LineString/MultiLineString, local equirectangular approximation.
