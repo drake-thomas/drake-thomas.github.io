@@ -16,6 +16,7 @@
   .lbl.pt { transform: translate(-6px, -50%); }
   .lbl.pt .dot { margin-right: 6px; }
   .lbl.area .dot { display: none; }
+  .lbl.faint { opacity: .72; font-size: 11.5px; }  /* shown early because the view is otherwise empty */
   .lbl.area { letter-spacing: .04em; }
   #context { position: fixed; left: 12px; bottom: 12px; z-index: 10; font-size: 12px; max-width: min(60vw, 640px); }
   #context b { color: var(--text); font-weight: 600; cursor: pointer; }
@@ -101,6 +102,7 @@ const CATS = {  // category -> [group, color]
 };
 const GROUPS = ['Geologic', 'Relief', 'Ice', 'Water', 'Dry', 'Islands', 'Human', 'Other'];
 const MIN_PX = { 5: 26, 4: 38, 3: 56, 2: 85, 1: 130 };  // on-screen size needed before a label appears
+const MIN_LABELS = 5, MAX_EARLY = 1.75;  // sparse views: show up to 5 labels that are within 1.75 zoom levels of qualifying
 const catColor = c => (CATS[c] || CATS.other)[1];
 const catGroup = c => (CATS[c] || CATS.other)[0];
 
@@ -210,6 +212,7 @@ function visibleCandidates(z, view) {
   const out = [];
   const W = map.getDiv().clientWidth, H = map.getDiv().clientHeight, diag = Math.hypot(W, H);
   const densityShift = Math.log2(state.density);  // >0 means fewer labels
+  const nearMiss = [];  // in view but not yet prominent enough: used to fill sparse views
   for (const f of features) {
     if (!state.groups.has(catGroup(f.category))) continue;
     if (!f.curated && !state.backbone) continue;
@@ -227,7 +230,11 @@ function visibleCandidates(z, view) {
     const sel = f === state.selected;
     if (f.vis_zoom != null) {
       // Measured prominence: the zoom where it starts to stand out.
-      if (z < f.vis_zoom + densityShift + (f.curated ? 0 : 0.5) && !sel) continue;
+      const gap = f.vis_zoom + densityShift + (f.curated ? 0 : 0.5) - z;
+      if (gap > 0 && !sel) {
+        if (gap <= MAX_EARLY && f.curated && !f.marine && sizePx < 3.5 * diag) nearMiss.push({ f, sizePx, gap });
+        continue;
+      }
     } else if (f._kind === 'line') {
       // A river is only as visible as it is wide (length alone made e.g. the Arkansas too prominent).
       const widthPx = riverWidthKm(f) * 1000 / mpp;
@@ -239,6 +246,13 @@ function visibleCandidates(z, view) {
     // too big: we're inside it (rivers never hide for size; areas get more headroom than points)
     if (f._kind !== 'line' && sizePx > (f._kind === 'area' ? 7 : 3.5) * diag && !sel) continue;
     out.push({ f, sizePx, prio: (sel ? 1e6 : 0) + f.salience * 10 + (f.curated ? 8 : 0) + Math.min(12, Math.log2(sizePx)) });
+  }
+  // Sparse view: show the features that come closest to qualifying, so wide empty
+  // stretches still say *something* about what's there.
+  const onScreen = out.filter(c => c.f.bbox ? true : (c.f.lat >= view.s && c.f.lat <= view.n && lngIn(c.f.lng, view))).length;
+  if (onScreen < MIN_LABELS && nearMiss.length) {
+    nearMiss.sort((a, b) => a.gap - b.gap || b.f.salience - a.f.salience);
+    for (const c of nearMiss.slice(0, MIN_LABELS - onScreen)) out.push({ f: c.f, sizePx: c.sizePx, faint: true, prio: c.f.salience * 10 - c.gap * 10 });
   }
   return out.sort((a, b) => b.prio - a.prio);
 }
@@ -252,7 +266,7 @@ function drawLabels(L) {
   const view = { n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng(), center: map.getCenter().toJSON() };
   const z = map.getZoom();
   const boxes = [], frag = [];
-  for (const { f } of visibleCandidates(z, view)) {
+  for (const { f, faint } of visibleCandidates(z, view)) {
     if (frag.length > 140) break;
     const a = labelAnchor(f, view);
     if (!a) continue;
@@ -263,10 +277,10 @@ function drawLabels(L) {
     const box = isPt ? [p.x - 6, p.y - h / 2, p.x + w - 6, p.y + h / 2] : [p.x - w / 2, p.y - h / 2, p.x + w / 2, p.y + h / 2];
     if (boxes.some(o => box[0] < o[2] && box[2] > o[0] && box[1] < o[3] && box[3] > o[1])) continue;
     boxes.push(box);
-    frag.push({ f, p });
+    frag.push({ f, p, faint });
   }
   const used = new Set();
-  for (const { f, p } of frag) {
+  for (const { f, p, faint } of frag) {
     let el = L.pool.get(f.id);
     if (!el) {
       el = document.createElement('div');
@@ -279,6 +293,7 @@ function drawLabels(L) {
       L.pool.set(f.id, el);
     }
     el.classList.toggle('sel', f === state.selected);
+    el.classList.toggle('faint', !!faint);
     el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
     if (el.parentNode !== L.div) L.div.appendChild(el);
     used.add(f.id);
