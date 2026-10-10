@@ -393,7 +393,7 @@ function drawFeatureOutline(f) {
   const ring = r => r.map(([lng, lat]) => ({ lat, lng }));
   const g = f.geometry;
   if (g?.type === 'Polygon') overlays.push(new google.maps.Polygon({ ...style, paths: g.coordinates.map(ring) }));
-  else if (g?.type === 'MultiPolygon') overlays.push(new google.maps.Polygon({ ...style, paths: g.coordinates.flatMap(p => p.map(ring)) }));
+  else if (g?.type === 'MultiPolygon') for (const part of g.coordinates) overlays.push(new google.maps.Polygon({ ...style, paths: part.map(ring) }));
   else overlays.push(new google.maps.Circle({ ...style, center: { lat: f.lat, lng: f.lng }, radius: f.extent_km * 500 }));
 }
 function clearOverlays() { overlays.forEach(o => o.setMap(null)); overlays = []; }

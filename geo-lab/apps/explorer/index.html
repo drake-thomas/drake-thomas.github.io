@@ -123,7 +123,7 @@ const CATS = {  // category -> [group, color]
 };
 const GROUPS = ['Geologic', 'Relief', 'Ice', 'Water', 'Dry', 'Islands', 'Human', 'Other'];
 const MIN_PX = { 5: 26, 4: 38, 3: 56, 2: 85, 1: 130 };  // on-screen size needed before a label appears
-const MIN_LABELS = 5, MAX_EARLY = 1.75;  // sparse views: show up to 5 labels that are within 1.75 zoom levels of qualifying
+const MIN_LABELS = 5, MAX_EARLY = 3;  // sparse views: show up to 5 labels that are within 1.75 zoom levels of qualifying
 const catColor = c => (CATS[c] || CATS.other)[1];
 const catGroup = c => (CATS[c] || CATS.other)[0];
 
@@ -270,10 +270,26 @@ function visibleCandidates(z, view) {
   }
   // Sparse view: show the features that come closest to qualifying, so wide empty
   // stretches still say *something* about what's there.
-  const onScreen = out.filter(c => c.f.bbox ? true : (c.f.lat >= view.s && c.f.lat <= view.n && lngIn(c.f.lng, view))).length;
-  if (onScreen < MIN_LABELS && nearMiss.length) {
-    nearMiss.sort((a, b) => a.gap - b.gap || b.f.salience - a.f.salience);
-    for (const c of nearMiss.slice(0, MIN_LABELS - onScreen)) out.push({ f: c.f, sizePx: c.sizePx, faint: true, prio: c.f.salience * 10 - c.gap * 10 });
+  // Big empty patches of screen: each empty ninth of the view shows its most prominent feature (closest to
+  // qualifying, then most salient), so a bright salt lake in otherwise blank steppe still gets a name.
+  const cellOf = f => {
+    if (f.lat < view.s || f.lat > view.n || !lngIn(f.lng, view)) return -1;
+    const span = (view.e - view.w + 360) % 360 || 360;
+    const cx = Math.min(2, Math.floor(((f.lng - view.w + 360) % 360) / span * 3));
+    const cy = Math.min(2, Math.floor((view.n - f.lat) / (view.n - view.s) * 3));
+    return cy * 3 + cx;
+  };
+  const filled = new Set(out.map(c => cellOf(c.f)).filter(c => c >= 0));
+  nearMiss.sort((a, b) => (a.gap - b.f.salience * 0.4) - (b.gap - a.f.salience * 0.4));
+  let extra = 0;
+  for (const c of nearMiss) {
+    const cell = cellOf(c.f);
+    const needFill = cell >= 0 && !filled.has(cell);
+    const needMin = out.length + extra < MIN_LABELS && c.gap <= 1.75;
+    if (!needFill && !needMin) continue;
+    if (cell >= 0) filled.add(cell);
+    out.push({ f: c.f, sizePx: c.sizePx, faint: true, prio: c.f.salience * 10 - c.gap * 10 });
+    extra++;
   }
   return out.sort((a, b) => b.prio - a.prio);
 }
@@ -336,7 +352,9 @@ function drawOutline(f, strong) {
   } else if (g.type === 'Polygon') {
     outline.push(new google.maps.Polygon({ map, paths: g.coordinates.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
   } else if (g.type === 'MultiPolygon') {
-    outline.push(new google.maps.Polygon({ map, paths: g.coordinates.flatMap(p => p.map(ring)), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
+    // one Polygon per part: as a single multi-path Polygon, overlapping parts punch holes in each other
+    for (const part of g.coordinates)
+      outline.push(new google.maps.Polygon({ map, paths: part.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
   } else if (g.type === 'LineString') {
     outline.push(new google.maps.Polyline({ map, path: ring(g.coordinates), ...style, strokeWeight: style.strokeWeight + 1 }));
   } else if (g.type === 'MultiLineString') {
