@@ -349,6 +349,12 @@ function drawOutline(f, strong) {
   const ring = r => r.map(([lng, lat]) => ({ lat, lng }));
   if (!g) {
     outline.push(new google.maps.Circle({ map, center: { lat: f.lat, lng: f.lng }, radius: f.extent_km * 500, fillOpacity: 0, ...style }));
+  } else if (f.shore && g.type.endsWith('Polygon')) {
+    // seas and gulfs: tint the water, but stroke only the real shore, not the straight open-water closing lines
+    const parts = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+    for (const part of parts)
+      outline.push(new google.maps.Polygon({ map, paths: part.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .1 : .04, ...style, strokeOpacity: 0 }));
+    for (const l of f.shore.coordinates) outline.push(new google.maps.Polyline({ map, path: ring(l), ...style }));
   } else if (g.type === 'Polygon') {
     outline.push(new google.maps.Polygon({ map, paths: g.coordinates.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
   } else if (g.type === 'MultiPolygon') {
