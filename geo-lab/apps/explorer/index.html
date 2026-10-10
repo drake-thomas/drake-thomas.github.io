@@ -161,7 +161,7 @@ async function main() {
   map.addListener('click', e => { if (fbPointClick(e.latLng.toJSON())) return; whatsHere(e.latLng.toJSON()); });
   $('status').remove();
   buildFilters();
-  if (start.id) { const f = features.find(x => x.id === start.id); if (f) select(f, false); }
+  if (start.id) { const f = features.find(x => x.id === start.id || x.alt_ids?.includes(start.id)); if (f) select(f, false); }
   updateZoomInfo();
 }
 
