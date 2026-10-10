@@ -98,7 +98,7 @@
 import { SatView } from '../../lib/satview.js';
 import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { SRS, GRADES } from '../../lib/srs.js';
-import { zoomForKm, offsetKm, fmtKm, shuffle, rand, pick } from '../../lib/geo.js';
+import { zoomForKm, offsetKm, fmtKm, shuffle, rand, pick, geometryContains } from '../../lib/geo.js';
 import { Linkifier } from '../../lib/linkify.js';
 import { openWiki } from '../../lib/wikipanel.js';
 
@@ -122,6 +122,7 @@ const DECKS = {
     scatter: { p: 0.5, fill: [0.12, 0.35], minZoom: 3 },
     // Several lakes are often in view (e.g. the Great Lakes), so every card pins the one being asked about.
     marker: 'pin', markLabel: 'pinned', alwaysMark: true,
+    partial: true,  // offers a hard mode: zoomed into part of the shoreline (separate SRS deck)
     filter: f => f.src === 'lakes' && f.lake?.rank,
     introKey: (f, r) => r,  // random order within the chosen size tier
     pool: (f, all) => all.filter(x => x.src === 'lakes' && x.lake?.rank),
@@ -182,14 +183,15 @@ const params = new URLSearchParams(location.search);
 const deckId = DECKS[params.get('deck')] ? params.get('deck') : 'craters';
 const deck = DECKS[deckId];
 const SETTINGS_KEY = `geolab.quiz.${deckId}.settings`;
-const settings = Object.assign({ newPerDay: 10, mode: 'choice', tier: 50 }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
+const settings = Object.assign({ newPerDay: 10, mode: 'choice', tier: 50, view: 'whole' }, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
+const partialMode = () => deck.partial && settings.view === 'partial';
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 
 const $ = id => document.getElementById(id);
-let sv, srs, all = [], cards = [], byId = {}, cur = null, streak = 0, mini, miniMarker, overlays = [], linker;
+let partialNote = '', sv, srs, wholeSrs = null, all = [], cards = [], byId = {}, cur = null, streak = 0, mini, miniMarker, overlays = [], linker;
 
 async function main() {
-  $('hDeck').textContent = deck.title;
+  $('hDeck').textContent = deck.title + (partialMode() ? ' · partial' : '');
   document.title = deck.title + ' quiz';
   sv = new SatView($('sv'), { onZoom: z => updateZoomButtons() });
   const data = await loadJSON(params.get('data') || '../../data/build/features.json');  // ?data= for dev fixtures
@@ -218,8 +220,19 @@ function buildDeck() {
   const key = Object.fromEntries(cards.map(f => [f.id, deck.introKey(f, seededRand(f.id))]));
   cards.sort((a, b) => key[a.id] - key[b.id]);
   if (deck.tiers) cards = cards.filter(f => f.lake.rank <= settings.tier);
+  wholeSrs = null; partialNote = '';
+  if (partialMode()) {
+    // Partial views are entangled with, but tracked separately from, knowing the whole outline:
+    // only lakes you've learned whole are in this deck, and missing one brings its whole card back sooner.
+    wholeSrs = new SRS(deckId, cards.map(f => f.id), { newPerDay: settings.newPerDay });
+    const learned = cards.filter(f => (wholeSrs.card(f.id)?.reps || 0) >= 1);
+    partialNote = learned.length
+      ? `Partial views: each card is a stretch of one lake's shoreline. Built from the ${learned.length} lake${learned.length > 1 ? 's' : ''} you've learned whole; missing one also brings its whole-lake card back sooner.`
+      : `Partial views: each card is a stretch of one lake's shoreline. You haven't learned any lakes in the whole-lake mode yet, so this starts with its first 10.`;
+    cards = learned.length ? learned : cards.slice(0, 10);
+  }
   byId = Object.fromEntries(cards.map(f => [f.id, f]));
-  srs = new SRS(deckId + (deck.tiers ? '' : ''), cards.map(f => f.id), { newPerDay: settings.newPerDay });
+  srs = new SRS(deckId + (partialMode() ? '_partial' : ''), cards.map(f => f.id), { newPerDay: settings.newPerDay });
   $('names').innerHTML = all.filter(deck.filter).map(f => `<option value="${esc(f.name)}">`).join('');
   updateHud();
 }
@@ -229,6 +242,7 @@ function showIntro() {
   showOverlay(`
     <h1>${deck.title}</h1>
     <p>${cards.length} cards${deck.tiers ? ` (top ${settings.tier} by area)` : ''}. Each one is shown at a random rotation, scale and offset, so you learn the thing and not one picture of it.</p>
+    ${partialNote ? `<p class="muted">${partialNote}</p>` : ''}
     <div class="stat-pills" style="margin:10px 0">
       <span class="pill">due <b>${s.due}</b></span><span class="pill">new <b>${s.new}</b></span>
       <span class="pill">learning <b>${s.learning}</b></span><span class="pill">young <b>${s.young}</b></span><span class="pill">mature <b>${s.mature}</b></span>
@@ -244,18 +258,53 @@ let upcoming = null;  // { id, plan } preloaded while the previous card was bein
 
 // How a card is framed: random rotation and scale; "scatter" decks usually show the
 // feature small, somewhere off-center, with a ring marking it.
+const MAX_VIEW_KM = 1500;  // never start wider than this: huge lakes may overflow the screen instead
+
+function partialView(f, W, H, rotation) {
+  // A stretch of shoreline: a view centred on the shore, ~15-35% of the lake across, in which
+  // between a quarter and two thirds is this lake's water (not a narrow side bay or open-water blank).
+  const g = f.geometry;
+  const rings = g?.type === 'Polygon' ? [g.coordinates[0]] : g?.type === 'MultiPolygon' ? g.coordinates.map(p => p[0]) : null;
+  if (!rings) return null;
+  const ring = rings.reduce((a, b) => (b.length > a.length ? b : a));
+  let best = null;
+  for (let t = 0; t < 14; t++) {
+    const v = ring[Math.floor(Math.random() * ring.length)];
+    const c = { lat: v[1], lng: v[0] };
+    const span = Math.max(15, Math.min(400, f.extent_km * rand(0.15, 0.35)));
+    const inside = [];
+    let n = 0;
+    for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) {
+      const p = offsetKm(c, i * span / 7, j * span / 7);
+      n++;
+      if (geometryContains(g, p.lng, p.lat)) inside.push({ p, d: Math.hypot(i, j) });
+    }
+    const frac = inside.length / n, score = -Math.abs(frac - 0.45);
+    if (inside.length && (!best || score > best.score)) best = { c, span, inside, score };
+    if (frac > 0.25 && frac < 0.67) break;
+  }
+  if (!best) return null;
+  // pin: lake water near (but not on) the view centre
+  const pinPt = best.inside.filter(x => x.d >= 1).sort((a, b) => a.d - b.d)[0]?.p || best.inside[0].p;
+  const zoom = zoomForKm(best.c.lat, best.span, Math.min(W, H));
+  return { lat: best.c.lat, lng: best.c.lng, focus: { ...best.c, sx: rand(-0.15, 0.15) * W, sy: rand(-0.2, 0.05) * H },
+           pin: pinPt, zoom, rotation, marked: true };
+}
+
 function planView(f) {
   const W = innerWidth, H = innerHeight, minDim = Math.min(W, H);
   const rotation = Math.random() * 360;
+  const minZoomForCap = zoomForKm(f.lat, MAX_VIEW_KM, W);
+  if (partialMode()) { const pv = partialView(f, W, H, rotation); if (pv) return pv; }
   const sc = deck.scatter;
   if (sc && Math.random() < sc.p) {
     const fill = rand(sc.fill[0], sc.fill[1]);
-    const zoom = Math.max(sc.minZoom ?? 3, zoomForKm(f.lat, f.extent_km / fill, minDim));
+    const zoom = Math.max(sc.minZoom ?? 3, minZoomForCap, zoomForKm(f.lat, f.extent_km / fill, minDim));
     const sx = rand(-0.38, 0.38) * W, sy = rand(-0.38, 0.1) * H;  // stay clear of the answer panel at the bottom
     return { lat: f.lat, lng: f.lng, focus: { lat: f.lat, lng: f.lng, sx, sy }, zoom, rotation, marked: true };
   }
   const fill = Math.random() < 0.2 ? rand(0.9, 1.4) : rand(0.3, 0.75);  // fraction of the short side the feature spans
-  const zoom = zoomForKm(f.lat, f.extent_km / fill, minDim);
+  const zoom = Math.max(minZoomForCap, zoomForKm(f.lat, f.extent_km / fill, minDim));
   const off = offsetKm(f, ...polar(rand(0, 0.22) * f.extent_km / Math.max(fill, 0.5)));
   return { lat: off.lat, lng: off.lng, zoom, rotation, marked: !!deck.alwaysMark };
 }
@@ -288,7 +337,7 @@ async function nextCard(forceExtra = false) {
   await sv.show({ ...plan, minZoom: Math.max(2, plan.zoom - 3.5), maxZoom: Math.min(20, plan.zoom + (plan.marked ? 5 : 3)) });
   if (plan.marked && deck.marker === 'pin') {
     // A small pin on the label point (inside the lake): says which one without giving away its outline.
-    overlays.push(new google.maps.Marker({ map: sv.map, position: { lat: f.lat, lng: f.lng }, clickable: false,
+    overlays.push(new google.maps.Marker({ map: sv.map, position: plan.pin || { lat: f.lat, lng: f.lng }, clickable: false,
       icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#ffe27a', fillOpacity: 1, strokeColor: '#000', strokeWeight: 2 } }));
   } else if (plan.marked) {
     // A ring just outside the rim: scales with zoom, so it never covers the crater itself.
@@ -370,6 +419,10 @@ function nextIvlLabel(id, g) {
 function grade(g) {
   if (!cur?.answered) return;
   srs.grade(cur.f.id, g);
+  if (wholeSrs && g === 0) {  // missed a partial view: review the whole lake within a day
+    const c = wholeSrs.card(cur.f.id);
+    if (c) { c.due = Math.min(c.due, Date.now() + 86400e3); wholeSrs._save(); }
+  }
   nextCard();
 }
 
@@ -435,14 +488,17 @@ function showSettings() {
       <select id="sMode"><option value="choice">Multiple choice</option><option value="typed">Type the name</option></select></div>
     <div class="row" style="margin:10px 0"><span class="grow">New cards per day</span><input id="sNew" type="text" size="4" value="${settings.newPerDay}"></div>
     ${deck.tiers ? `<div class="row" style="margin:10px 0"><span class="grow">Deck size</span><select id="sTier">${deck.tiers.map(t => `<option value="${t}">Top ${t}</option>`).join('')}</select></div>` : ''}
+    ${deck.partial ? `<div class="row" style="margin:10px 0"><span class="grow">View <span class="muted small">(partial = hard: a stretch of shoreline; its own deck, built from lakes you've learned whole)</span></span><select id="sView"><option value="whole">Whole lakes</option><option value="partial">Partial views (hard)</option></select></div>` : ''}
     <div class="row" style="margin-top:16px"><button class="primary" id="sSave">Save</button><button id="sExport">Export progress</button><button id="sImport">Import</button><button id="sReset" class="bad">Reset progress</button></div>
     <p class="small">Progress is stored in this browser (localStorage). Export it to keep a backup or move devices.</p>`);
   $('sMode').value = settings.mode;
   if (deck.tiers) $('sTier').value = settings.tier;
+  if (deck.partial) $('sView').value = settings.view;
   $('sSave').onclick = () => {
     settings.mode = $('sMode').value;
     settings.newPerDay = Math.max(1, parseInt($('sNew').value) || 10);
     if (deck.tiers) settings.tier = +$('sTier').value;
+    if (deck.partial) settings.view = $('sView').value;
     saveSettings(); buildDeck(); hideOverlay(); nextCard();
   };
   $('sExport').onclick = () => {
