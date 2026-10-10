@@ -341,6 +341,18 @@ function flyTo(f) {
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// Sources are usually URLs but sometimes plain text ("Natural Earth 10m", "OpenStreetMap").
+// Never let one odd entry break the card.
+function sourceHtml(u) {
+  const t = String(u ?? '');
+  if (/^https?:\/\//.test(t)) {
+    let host = t;
+    try { host = new URL(t).hostname.replace('www.', ''); } catch {}
+    return `<a href="${esc(t)}" target="_blank" rel="noopener">${esc(host)}</a>`;
+  }
+  return `<span>${esc(t.length > 40 ? t.slice(0, 40) + '…' : t)}</span>`;
+}
+
 function showInfo(f) {
   const info = $('info');
   if (!f) { info.classList.add('hidden'); return; }
@@ -350,13 +362,13 @@ function showInfo(f) {
   if (f.lake?.area_km2) facts.push(`${Math.round(f.lake.area_km2).toLocaleString()} km²`);
   if (f.lake?.rank) facts.push(`#${f.lake.rank} by area`);
   if (f.elevation_m) facts.push(`${f.elevation_m.toLocaleString()} m`);
-  const src = (f.sources || []).slice(0, 3).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(new URL(u).hostname.replace('www.', ''))}</a>`).join(' · ');
+  const src = (f.sources || []).slice(0, 4).map(sourceHtml).join(' · ');
   info.innerHTML = `
     <div class="row"><h2 class="grow">${esc(f.name)}</h2><button id="closeInfo" title="Close (Esc)">✕</button></div>
     ${f.aka?.length ? `<div class="muted small">${esc(f.aka.join(' · '))}</div>` : ''}
     <div class="meta row small">
       <span class="tag" style="border-color:${catColor(f.category)}">${esc(f.category)}</span>
-      <span class="muted">~${fmtKm(f.extent_km)} across</span>
+      <span class="muted">${f.length_km ? `~${fmtKm(f.length_km)} long` : `~${fmtKm(f.extent_km)} across`}</span>
       ${f.country ? `<span class="muted">${esc(f.country)}</span>` : ''}
       ${facts.map(x => `<span class="muted">${esc(x)}</span>`).join('')}
     </div>
@@ -446,7 +458,7 @@ function whatsHere(p) {
   }
   $('info').innerHTML = `<div class="row"><b class="grow">What's here? (${hits.length})</b><button id="closeInfo">✕</button></div>
     <div class="here-list">${hits.slice(0, 12).map((f, i) =>
-      `<div data-i="${i}"><span class="legend-dot" style="background:${catColor(f.category)}"></span> ${esc(f.name)} <span class="muted small">${esc(f.category)} · ${fmtKm(f.extent_km)}</span></div>`).join('')}</div>`;
+      `<div data-i="${i}"><span class="legend-dot" style="background:${catColor(f.category)}"></span> ${esc(f.name)} <span class="muted small">${esc(f.category)} · ${fmtKm(f.length_km || f.extent_km)}</span></div>`).join('')}</div>`;
   $('info').classList.remove('hidden');
   $('closeInfo').onclick = () => select(null);
   $('info').querySelectorAll('.here-list div').forEach(d => {
