@@ -397,10 +397,15 @@ function drawOutline(f, strong) {
     for (const part of parts)
       outline.push(new google.maps.Polygon({ map, paths: part.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .07 : .03, ...style, strokeOpacity: style.strokeOpacity * .35, strokeWeight: 1 }));
   }
+  // rivers get a solid stroke; other lines (a visible border seam) a thin dashed one that doesn't hide what it marks
+  const dashed = f.category !== 'river';
+  const lineStyle = dashed
+    ? { ...style, strokeOpacity: 0, icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: style.strokeOpacity, strokeColor: style.strokeColor, scale: 2 }, offset: '0', repeat: '10px' }] }
+    : { ...style, strokeWeight: style.strokeWeight + 1 };
   if (g?.type === 'LineString') {
-    outline.push(new google.maps.Polyline({ map, path: ring(g.coordinates), ...style, strokeWeight: style.strokeWeight + 1 }));
+    outline.push(new google.maps.Polyline({ map, path: ring(g.coordinates), ...lineStyle }));
   } else if (g?.type === 'MultiLineString') {
-    for (const l of g.coordinates) outline.push(new google.maps.Polyline({ map, path: ring(l), ...style, strokeWeight: style.strokeWeight + 1 }));
+    for (const l of g.coordinates) outline.push(new google.maps.Polyline({ map, path: ring(l), ...lineStyle }));
   }
 }
 
@@ -460,7 +465,7 @@ function showInfo(f) {
     ${f.aka?.length ? `<div class="muted small">${esc(f.aka.join(' · '))}</div>` : ''}
     <div class="meta row small">
       <span class="tag" style="border-color:${catColor(f.category)}">${esc(f.category)}</span>
-      <span class="muted">${f.length_km ? `~${fmtKm(f.length_km)} long` : `~${fmtKm(f.extent_km)} across`}</span>
+      <span class="muted">${f.length_km ? `~${fmtKm(f.length_km)} long` : f._kind === 'line' ? `~${fmtKm(f.extent_km)} long` : `~${fmtKm(f.extent_km)} across`}</span>
       ${f.country ? `<span class="muted">${esc(f.country)}</span>` : ''}
       ${facts.map(x => `<span class="muted">${esc(x)}</span>`).join('')}
     </div>
