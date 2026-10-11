@@ -155,6 +155,7 @@ async function main() {
     isFractionalZoomEnabled: true, minZoom: 2, backgroundColor: '#000',
     zoomControl: true, zoomControlOptions: { position: gm.ControlPosition.RIGHT_CENTER },
   });
+  window.__geo = { map };  // debugging / headless tests
   layer = makeLabelLayer(gm);
   layer.setMap(map);
   map.addListener('idle', () => { writeHash(); updateZoomInfo(); updateContext(); });
@@ -229,6 +230,11 @@ const lngIn = (lng, v) => v.w <= v.e ? lng >= v.w && lng <= v.e : lng >= v.w || 
 // Typical visible width when a river has no width_km yet (by salience).
 const riverWidthKm = f => f.width_km || [0.3, 0.3, 0.6, 1.5, 3, 5][Math.max(0, Math.min(5, f.salience))];
 
+// Label stability: a label that has appeared stays while you zoom further in (until it's too big or out of view),
+// so an early "fill the empty screen" label doesn't hand over to a neighbour one level later and look like a rename
+// (player report: Lebedinsky/Stoilensky pits). Zooming back out below where it appeared resets it.
+let shownAt = new Map();  // feature id -> lowest zoom at which it has been continuously shown
+
 function visibleCandidates(z, view) {
   const out = [];
   const W = map.getDiv().clientWidth, H = map.getDiv().clientHeight, diag = Math.hypot(W, H);
@@ -249,7 +255,10 @@ function visibleCandidates(z, view) {
     const mpp = metersPerPx(f.lat, z);
     const sizePx = f.extent_km * 1000 / mpp;
     const sel = f === state.selected;
-    if (f.vis_zoom != null) {
+    const sticky = shownAt.has(f.id) && shownAt.get(f.id) <= z + 1e-6;
+    if (sticky) {
+      // already on screen from a lower zoom: keep it (subject only to the too-big rule below)
+    } else if (f.vis_zoom != null) {
       // Measured prominence: the zoom where it starts to stand out.
       const gap = f.vis_zoom + densityShift + (f.curated ? 0 : 0.5) - z;
       if (gap > 0 && !sel) {
@@ -266,7 +275,7 @@ function visibleCandidates(z, view) {
     }
     // too big: we're inside it (rivers never hide for size; areas get more headroom than points)
     if (f._kind !== 'line' && sizePx > (f._kind === 'area' ? 7 : 3.5) * diag && !sel) continue;
-    out.push({ f, sizePx, prio: (sel ? 1e6 : 0) + f.salience * 10 + (f.curated ? 8 : 0) + Math.min(12, Math.log2(sizePx)) });
+    out.push({ f, sizePx, prio: (sel ? 1e6 : 0) + (sticky ? 6 : 0) + f.salience * 10 + (f.curated ? 8 : 0) + Math.min(12, Math.log2(sizePx)) });
   }
   // Sparse view: show the features that come closest to qualifying, so wide empty
   // stretches still say *something* about what's there.
@@ -336,6 +345,9 @@ function drawLabels(L) {
     used.add(f.id);
   }
   for (const [id, el] of L.pool) if (!used.has(id) && el.parentNode) el.remove();
+  const next = new Map();
+  for (const { f } of frag) next.set(f.id, Math.min(shownAt.get(f.id) ?? z, z));
+  shownAt = next;
 }
 const redraw = () => layer && scheduleDraw(layer);
 
