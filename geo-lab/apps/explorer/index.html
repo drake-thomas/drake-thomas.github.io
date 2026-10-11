@@ -52,6 +52,7 @@
   .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   #toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
   #toolbar button { padding: 6px 10px; font-size: 13px; }
+  #fb input#fbName { flex: 1; min-width: 0; font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; padding: 5px 8px; margin-top: 6px; }
   #fb textarea { width: 100%; margin: 6px 0; font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; padding: 6px 8px; resize: vertical; }
   #fb .row button { padding: 5px 8px; font-size: 12px; }
   #fb button.on { background: #ffe27a; color: #1a1500; border-color: transparent; }
@@ -92,6 +93,7 @@
       <button id="fbLasso" title="Draw a loop around something unlabeled (W)">◯ what's this? (W)</button>
     </div>
     <div class="small fbwarn" id="fbWarn" hidden>Not attached to any feature. Open a card (click a label) with the feature on screen, or draw a loop with W.</div>
+    <div class="row small" id="fbWho"></div>
     <textarea id="fbNote" rows="2" placeholder="Optional note (what's wrong, what you think it is…)"></textarea>
     <div class="row"><button class="primary" id="fbSend">Send</button><button id="fbClear">Clear</button>
       <span class="grow"></span><button id="fbQueue" class="linkish small" title="Review, edit or copy queued feedback"></button></div>
@@ -640,10 +642,36 @@ function updateZoomInfo() {
 }
 
 // ---------- feedback: polygon corrections + "what's this?" lassos ----------
-// Locally the dev server stores them in data/feedback/*.jsonl; on the static site they queue in
-// localStorage and can be copied with one click.
+// Locally the dev server stores them in data/feedback/*.jsonl; on the site they go to the feedback Worker
+// (tools/feedback_worker), pulled into data/feedback/ by tools/feedback_pull.py. Anything that fails to send
+// queues in localStorage, where it can be edited, re-sent or copied.
 const fb = { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [] };
-const FB_KEY = 'geolab.feedback.queue';
+const FB_KEY = 'geolab.feedback.queue', FB_NAME = 'geolab.feedback.name', FB_OWNER = 'geolab.feedback.key';
+const FB_URL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? '../../api/feedback'
+  : 'https://geolab-feedback.grahamsnumberisbig.workers.dev/feedback';
+const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+// ?fbkey=… (given to the site owner) marks this browser's feedback as verified; stripped from the URL once stored.
+(() => {
+  const u = new URL(location.href), k = u.searchParams.get('fbkey');
+  if (k) { lsSet(FB_OWNER, k); u.searchParams.delete('fbkey'); history.replaceState(null, '', u); }
+})();
+async function fbPost(item) {
+  try {
+    const r = await fetch(FB_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...item, name: lsGet(FB_NAME) || item.name || '', key: lsGet(FB_OWNER) || undefined }) });
+    return r.ok ? 'ok' : r.status === 429 ? 'limited' : 'fail';
+  } catch { return 'fail'; }
+}
+function fbRenderWho() {
+  const name = lsGet(FB_NAME);
+  $('fbWho').innerHTML = name && !fb.editName
+    ? `<span class="muted grow">Sending as <b>${esc(name)}</b></span><button class="linkish small" id="fbNameEdit">change</button>`
+    : `<input id="fbName" class="grow" maxlength="60" placeholder="Your name (remembered on this device)" value="${esc(name)}">`;
+  const inp = $('fbName');
+  if (inp) inp.onchange = () => { const v = inp.value.trim(); if (v) { lsSet(FB_NAME, v); fb.editName = false; fbRenderWho(); } };
+  else $('fbNameEdit').onclick = () => { fb.editName = true; fbRenderWho(); $('fbName').focus(); };
+}
 const fbQueue = () => { try { return JSON.parse(localStorage.getItem(FB_KEY) || '[]'); } catch { return []; } };
 // What the feedback is about: the feature being corrected, else the open card's feature if it's on screen.
 function fbOnScreen(f) {
@@ -674,7 +702,7 @@ function fbRefresh() {
     : `${fb.inPts.length} inside · ${fb.outPts.length} outside${fb.lasso ? ' · 1 loop' : ''}. Select a feature for I/O, or use W anywhere.`;
   $('lassoLayer').classList.toggle('active', fb.mode === 'lasso');
 }
-function fbOpen() { $('fb').classList.remove('hidden'); fbRefresh(); }
+function fbOpen() { $('fb').classList.remove('hidden'); fbRenderWho(); fbRefresh(); }
 function fbSetMode(m) {
   fbOpen();
   if ((m === 'in' || m === 'out') && !state.selected) { $('fbHelp').textContent = 'Select a feature first (click its label), then press I or O.'; return; }
@@ -698,6 +726,9 @@ function fbClear() {
 }
 async function fbSend() {
   if (!fb.inPts.length && !fb.outPts.length && !fb.lasso && !$('fbNote').value.trim()) { $('fbHelp').textContent = 'Nothing to send yet.'; return; }
+  const nameIn = $('fbName');
+  if (nameIn) { const v = nameIn.value.trim(); if (!v) { $('fbHelp').textContent = 'Add a name (any name) so we know who sent it.'; nameIn.focus(); return; }
+    lsSet(FB_NAME, v); fb.editName = false; fbRenderWho(); }
   const subj = fbSubject();
   if (!subj && !fb.lasso && !fb.confirmUnattached) {
     fb.confirmUnattached = true; $('fbWarn').hidden = false;
@@ -711,14 +742,11 @@ async function fbSend() {
     include: fb.inPts, exclude: fb.outPts, lasso: fb.lasso, note: $('fbNote').value.trim(),
     view: { lat: +c.lat().toFixed(4), lng: +wrapLng(c.lng()).toFixed(4), z: +map.getZoom().toFixed(1) }, url: location.href,
   };
-  let stored = false;
-  try {
-    const r = await fetch('../../api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
-    stored = r.ok;
-  } catch {}
-  if (!stored) { const q = fbQueue(); q.push(item); fbSave(q); }
+  const res = await fbPost(item);
+  if (res !== 'ok') { const q = fbQueue(); q.push(item); fbSave(q); }
   fbClear();
-  fb.flash = stored ? 'Sent ✓' : 'Saved here ✓. Open "queued" to review, edit or copy.'; fb.flashAt = Date.now();
+  fb.flash = res === 'ok' ? 'Sent ✓ Thanks!' : res === 'limited' ? 'Lots of feedback this hour, so it\'s saved here; send it from "queued" later.'
+    : 'Couldn\'t reach the server, so it\'s saved here. Open "queued" to retry, edit or copy.'; fb.flashAt = Date.now();
   fbRefresh();
 }
 const fbSave = q => { try { localStorage.setItem(FB_KEY, JSON.stringify(q)); } catch {} };
@@ -730,13 +758,20 @@ function fbRenderList() {
         x.include?.length || x.exclude?.length ? ` · ${x.include.length} in, ${x.exclude.length} out` : ''}</span>
         <button data-act="show" title="Go to this view">Show</button><button data-act="del" title="Delete this item">Delete</button></div>
       <textarea id="fbq-${i}" rows="1" placeholder="Note">${esc(x.note || '')}</textarea></div>`).join('')
-    + (q.length ? `<div class="row"><button class="primary" data-act="copy">Copy all</button><button data-act="clear">Clear all</button><span class="small muted grow" id="fbListMsg"></span></div>` : '');
+    + (q.length ? `<div class="row"><button class="primary" data-act="send">Send all</button><button data-act="copy">Copy all</button><button data-act="clear">Clear all</button><span class="small muted grow" id="fbListMsg"></span></div>` : '');
 }
 $('fbList').addEventListener('click', async e => {
   const b = e.target.closest('button[data-act]'); if (!b) return;
   const q = fbQueue(), i = +b.closest('.fbitem')?.dataset.i;
   if (b.dataset.act === 'del') { q.splice(i, 1); fbSave(q); fbRefresh(); }
   else if (b.dataset.act === 'show') { const v = q[i].view; map.moveCamera({ center: { lat: v.lat, lng: v.lng }, zoom: v.z }); }
+  else if (b.dataset.act === 'send') {
+    b.disabled = true; const left = [];
+    for (const x of q) if (await fbPost(x) !== 'ok') left.push(x);
+    fbSave(left); fbRefresh();
+    fb.flash = left.length ? `Sent ${q.length - left.length}; ${left.length} still queued (server unreachable or busy).` : `Sent all ${q.length} ✓`;
+    fb.flashAt = Date.now(); fbRefresh();
+  }
   else if (b.dataset.act === 'copy') {
     const text = q.map(x => JSON.stringify(x)).join('\n');
     let ok = true; try { await navigator.clipboard.writeText(text); } catch { ok = false; }
