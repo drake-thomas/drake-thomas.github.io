@@ -524,7 +524,11 @@ function updateContext() {
 function whatsHere(p) {
   const z = map.getZoom();
   const mpp = metersPerPx(p.lat, z);
-  const hits = [];
+  // A region many screens across isn't what you clicked on when zoomed into a small patch of it (a 1 km view of
+  // Colorado isn't "the Rocky Mountains"); it's listed as context in the panel instead.
+  const screenKm = map.getDiv().clientWidth * mpp / 1000;
+  const tooBig = f => f.extent_km > 12 * screenKm;
+  const hits = [], around = [];
   for (const f of features) {
     if (!state.groups.has(catGroup(f.category))) continue;
     if (!f.curated && !state.backbone) continue;
@@ -534,6 +538,7 @@ function whatsHere(p) {
       const b = f.bbox;
       // (features split at the 180th meridian have no bbox: test them directly)
       if (!b || (p.lng >= b[0] && p.lng <= b[2] && p.lat >= b[1] && p.lat <= b[3])) near = geometryContains(g, p.lng, p.lat);
+      if (near && tooBig(f)) { around.push(f); continue; }
     } else if (g && /LineString/.test(g.type)) {
       // within the river's visible width (or ~12px when zoomed out)
       const tolKm = Math.max(riverWidthKm(f) / 2 + 0.3, 12 * mpp / 1000);
@@ -554,10 +559,13 @@ function whatsHere(p) {
   if (hits.length === 1) return select(hits[0]);
   if (!hits.length) {
     state.selected = null; drawOutline(null);
+    around.sort((a, b) => a.extent_km - b.extent_km);
     $('info').innerHTML = `<div class="row"><b class="grow">Nothing labeled here</b><button id="closeInfo">✕</button></div>
-      <div class="muted small">${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}. Know what this is? It might deserve a label.</div>`;
+      <div class="muted small">${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}. Know what this is? It might deserve a label.</div>
+      ${around.length ? `<div class="small" style="margin-top:6px">Within ${around.slice(0, 3).map(f => `<b class="linkish" data-id="${esc(f.id)}">${esc(f.name)}</b>`).join(' › ')}</div>` : ''}`;
     $('info').classList.remove('hidden');
     $('closeInfo').onclick = () => select(null);
+    $('info').querySelectorAll('b[data-id]').forEach(b => b.onclick = () => select(features.find(f => f.id === b.dataset.id)));
     redraw();
     return;
   }
