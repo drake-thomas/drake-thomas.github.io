@@ -109,6 +109,7 @@ import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { metersPerPx, zoomForKm, geometryContains, fmtKm, haversineKm, pick } from '../../lib/geo.js';
 import { Linkifier } from '../../lib/linkify.js';
 import { openWiki } from '../../lib/wikipanel.js';
+import { sourceListHtml, bindSources } from '../../lib/sources.js';
 
 const CATS = {  // category -> [group, color]
   'impact-crater': ['Geologic', '#ff7a59'], 'geologic-structure': ['Geologic', '#ff9f68'],
@@ -137,12 +138,13 @@ try { Object.assign(state, JSON.parse(localStorage.getItem('geolab.explorer') ||
 const persist = () => { try { localStorage.setItem('geolab.explorer', JSON.stringify({ ...state, groups: [...state.groups], selected: null, hovered: null })); } catch {} };
 
 const $ = id => document.getElementById(id);
-let map, features = [], layer, outline = [], linker;
+let map, features = [], layer, outline = [], linker, sourceTitles = {};
 
 async function main() {
   const [gm, data, glossary] = await Promise.all([loadMaps(), loadJSON('../../data/build/features.json'),
     loadJSON('../../data/glossary.json').catch(() => ({}))]);
   features = data.features;
+  sourceTitles = data.source_titles || {};
   linker = new Linkifier(features, glossary);
   for (const f of features) {
     f.curated = !String(f.src || '').startsWith('ne:');
@@ -422,15 +424,6 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 
 // Sources are usually URLs but sometimes plain text ("Natural Earth 10m", "OpenStreetMap").
 // Never let one odd entry break the card.
-function sourceHtml(u) {
-  const t = String(u ?? '');
-  if (/^https?:\/\//.test(t)) {
-    let host = t;
-    try { host = new URL(t).hostname.replace('www.', ''); } catch {}
-    return `<a href="${esc(t)}" target="_blank" rel="noopener">${esc(host)}</a>`;
-  }
-  return `<span>${esc(t.length > 40 ? t.slice(0, 40) + '…' : t)}</span>`;
-}
 
 function showInfo(f) {
   const info = $('info');
@@ -441,7 +434,7 @@ function showInfo(f) {
   if (f.lake?.area_km2) facts.push(`${Math.round(f.lake.area_km2).toLocaleString()} km²`);
   if (f.lake?.rank) facts.push(`#${f.lake.rank} by area`);
   if (f.elevation_m) facts.push(`${f.elevation_m.toLocaleString()} m`);
-  const src = (f.sources || []).slice(0, 4).map(sourceHtml).join(' · ');
+  const src = sourceListHtml(f.sources, sourceTitles);
   info.innerHTML = `
     <div class="row"><h2 class="grow">${esc(f.name)}</h2><button id="closeInfo" title="Close (Esc)">✕</button></div>
     ${f.aka?.length ? `<div class="muted small">${esc(f.aka.join(' · '))}</div>` : ''}
@@ -453,16 +446,15 @@ function showInfo(f) {
     </div>
     ${f.description ? `<div class="desc">${linker.html(f.description, f)}</div>` : `<div class="desc muted small">Natural Earth ${esc((f.src || '').replace('ne:', ''))} feature (no curated description yet).</div>`}
     ${f.look_for ? `<div class="look">👁 ${linker.html(f.look_for, f)}</div>` : ''}
-    <div class="row small"><button id="flyBtn">Zoom to fit</button>${src ? `<span class="muted">${src}</span>` : ''}</div>`;
+    <div class="row small"><button id="flyBtn">Zoom to fit</button></div>
+    ${src}`;
   info.classList.remove('hidden');
   $('closeInfo').onclick = () => select(null);
   $('flyBtn').onclick = () => flyTo(f);
   // links in the description: other features fly+select, jargon opens the Wikipedia panel
   linker.bind(info, { onFeature: id => { const g = features.find(x => x.id === id); if (g) select(g, true); }, onTerm: openWiki });
   // the feature's own Wikipedia source opens in the panel too
-  info.querySelectorAll('a[href*="wikipedia.org/wiki/"]').forEach(a => a.onclick = e => {
-    e.preventDefault(); openWiki(decodeURIComponent(a.href.split('/wiki/')[1]).replace(/_/g, ' '));
-  });
+  bindSources(info, { onWiki: openWiki });
 }
 
 // Distance (km) from p to a LineString/MultiLineString, local equirectangular approximation.

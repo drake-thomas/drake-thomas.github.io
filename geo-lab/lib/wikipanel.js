@@ -46,10 +46,10 @@ function p_title(t) { if (panel) panel.querySelector('.wp-title').textContent = 
 
 export function closeWiki() { panel?.classList.remove('open'); }
 
-export async function openWiki(title) {
+export async function openWiki(title, lang = 'en') {
   const p = ensure();
   const page = title.replace(/ /g, '_');
-  const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(page)}`;
+  const url = `https://${/^[a-z-]{2,12}$/.test(lang) ? lang : 'en'}.wikipedia.org/wiki/${encodeURIComponent(page)}`;
   p.querySelector('.wp-title').textContent = title;
   ours = true; ourTitle = title;
   p.querySelector('.wp-open').href = url;

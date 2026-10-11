@@ -97,3 +97,17 @@ a.glink:hover { color: #ffe27a; border-bottom-color: #ffe27a; }
 .fbitem textarea { width: 100%; }
 #fbList { max-height: 40vh; overflow: auto; }
 .linkish { background: none; border: none; color: inherit; opacity: .75; cursor: pointer; padding: 0; text-decoration: underline dotted; }
+
+/* card source list: icon + readable title (+ language/host), one per line */
+.srcs { list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid rgba(255,255,255,.1); display: grid; gap: 3px; font-size: 12px; }
+.srcs li { min-width: 0; }
+.srcs a, .srcs > li > span { display: flex; align-items: baseline; gap: 6px; color: inherit; text-decoration: none; min-width: 0; }
+.srcs a:hover .src-t { text-decoration: underline; }
+.srcs .src-ic { width: 13px; height: 13px; flex: none; align-self: flex-start; margin-top: 2px; opacity: .8; }
+.srcs .src-t { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.srcs .src-sub { opacity: .55; white-space: nowrap; flex: none; font-size: 11px; }
+.srcs .src-wikipedia .src-ic { color: #d8dde3; }
+.srcs .src-paper .src-ic { color: #9fc3ff; }
+.srcs .src-osm .src-ic { color: #8fd18f; }
+.srcs .src-dataset .src-ic, .srcs .src-dataset { opacity: .7; }
+.srcs details summary { cursor: pointer; opacity: .6; }
