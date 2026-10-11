@@ -107,6 +107,9 @@ export class Linkifier {
           const lowerOk = !/^\p{Lu}/u.test(span) || sentenceStart(text, a.index);
           const t = lowerOk && (this.gloss.get(k) || this.gloss.get(k.replace(/(es|s)$/, '')) || this.gloss.get(k.replace(/s$/, '')));
           if (t && !usedT.has(t)) hit = { n, span, html: `<a class="glink" data-wiki="${esc(t)}" title="What is ${esc(t)}?">${esc(span)}</a>`, mark: () => usedT.add(t) };
+          // already linked once: consume the whole span so a shorter sub-term can't link it in the wrong sense
+          // ("piedmont glacier" seen twice must not fall back to "piedmont" -> Foothills)
+          else if (t) hit = { n, skip: true };
         }
       }
       if (hit && !hit.skip) {
