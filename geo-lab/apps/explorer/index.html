@@ -670,7 +670,7 @@ function updateZoomInfo() {
 // Locally the dev server stores them in data/feedback/*.jsonl; on the site they go to the feedback Worker
 // (tools/feedback_worker), pulled into data/feedback/ by tools/feedback_pull.py. Anything that fails to send
 // queues in localStorage, where it can be edited, re-sent or copied.
-const fb = { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [] };
+const fb = { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [], undo: [] };
 const FB_KEY = 'geolab.feedback.queue', FB_NAME = 'geolab.feedback.name', FB_OWNER = 'geolab.feedback.key';
 const FB_URL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? '../../api/feedback'
   : 'https://geolab-feedback.grahamsnumberisbig.workers.dev/feedback';
@@ -723,8 +723,8 @@ function fbRefresh() {
   fb.confirmUnattached = false;
   if (fb.flash && Date.now() - fb.flashAt < 5000) { $('fbHelp').textContent = fb.flash; } else $('fbHelp').textContent = fb.mode === 'in' ? 'Click spots that should be inside this feature.'
     : fb.mode === 'out' ? 'Click spots that are wrongly inside this feature.'
-    : fb.mode === 'lasso' ? 'Drag a loop around the thing you want identified.'
-    : `${fb.inPts.length} inside · ${fb.outPts.length} outside${fb.lasso ? ' · 1 loop' : ''}. Select a feature for I/O, or use W anywhere.`;
+    : fb.mode === 'lasso' ? 'Drag a loop around the thing you want identified (Esc cancels).'
+    : `${fb.inPts.length} inside · ${fb.outPts.length} outside${fb.lasso ? ' · 1 loop' : ''}. Select a feature for I/O, or use W anywhere.${fb.undo.length ? ' Ctrl/⌘-Z undoes.' : ''}`;
   $('lassoLayer').classList.toggle('active', fb.mode === 'lasso');
 }
 function fbOpen() { $('fb').classList.remove('hidden'); fbRenderWho(); fbRefresh(); }
@@ -738,14 +738,26 @@ function fbSetMode(m) {
 function fbPointClick(p) {
   if (fb.mode !== 'in' && fb.mode !== 'out') return false;
   (fb.mode === 'in' ? fb.inPts : fb.outPts).push([+p.lat.toFixed(5), +p.lng.toFixed(5)]);
-  fb.shapes.push(new google.maps.Marker({ map, position: p, clickable: false, label: { text: fb.mode === 'in' ? '+' : '−', color: '#000', fontWeight: '700' },
-    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: fb.mode === 'in' ? '#5ad17a' : '#ff6b6b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 1.5 } }));
+  const m = new google.maps.Marker({ map, position: p, clickable: false, label: { text: fb.mode === 'in' ? '+' : '−', color: '#000', fontWeight: '700' },
+    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: fb.mode === 'in' ? '#5ad17a' : '#ff6b6b', fillOpacity: 1, strokeColor: '#000', strokeWeight: 1.5 } });
+  fb.shapes.push(m);
+  fb.undo.push({ kind: fb.mode, shape: m });
+  fbRefresh();
+  return true;
+}
+// Ctrl/Cmd-Z: take back the last inside/outside point or loop
+function fbUndo() {
+  const u = fb.undo.pop(); if (!u) return false;
+  u.shape.setMap(null);
+  if (u.kind === 'in') fb.inPts.pop();
+  else if (u.kind === 'out') fb.outPts.pop();
+  else { fb.lasso = u.prev; u.prevShape?.setMap(map); }
   fbRefresh();
   return true;
 }
 function fbClear() {
   fb.shapes.forEach(s => s.setMap(null));
-  Object.assign(fb, { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [] });
+  Object.assign(fb, { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [], undo: [] });
   $('fbNote').value = '';
   fbRefresh();
 }
@@ -816,14 +828,21 @@ $('fbList').addEventListener('change', e => {
   const layer = $('lassoLayer'), path = $('lassoPath');
   const draw = () => path.setAttribute('d', pts?.length ? 'M' + pts.map(p => p.join(',')).join('L') + 'Z' : '');
   layer.addEventListener('pointerdown', e => { pts = [[e.clientX, e.clientY]]; layer.setPointerCapture(e.pointerId); draw(); });
+  // Esc mid-drag throws the loop away (the global Esc handler then leaves lasso mode)
+  addEventListener('keydown', e => { if (e.key === 'Escape' && pts) { pts = null; draw(); } }, true);
   layer.addEventListener('pointermove', e => { if (!pts) return; const l = pts[pts.length - 1]; if (Math.hypot(e.clientX - l[0], e.clientY - l[1]) > 4) { pts.push([e.clientX, e.clientY]); draw(); } });
   layer.addEventListener('pointerup', () => {
     if (!pts || pts.length < 5) { pts = null; draw(); return; }
     const proj = layer_projection();
     const rect = map.getDiv().getBoundingClientRect();
     const ll = pts.map(([x, y]) => proj.fromContainerPixelToLatLng(new google.maps.Point(x - rect.left, y - rect.top)).toJSON());
+    // a new loop replaces the previous one (undo brings it back)
+    const prev = fb.lasso, prevShape = [...fb.undo].reverse().find(u => u.kind === 'lasso' && u.shape.getMap())?.shape;
+    prevShape?.setMap(null);
     fb.lasso = ll.map(p => [+p.lat.toFixed(5), +p.lng.toFixed(5)]);
-    fb.shapes.push(new google.maps.Polygon({ map, paths: ll, strokeColor: '#ffe27a', strokeWeight: 2.5, fillColor: '#ffe27a', fillOpacity: 0.12, clickable: false }));
+    const poly = new google.maps.Polygon({ map, paths: ll, strokeColor: '#ffe27a', strokeWeight: 2.5, fillColor: '#ffe27a', fillOpacity: 0.12, clickable: false });
+    fb.shapes.push(poly);
+    fb.undo.push({ kind: 'lasso', shape: poly, prev, prevShape });
     pts = null; draw();
     fb.mode = null; fb.target = null;
     fbRefresh();
@@ -846,6 +865,7 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === '/') { e.preventDefault(); $('search').focus(); $('search').select(); }
   else if (e.key === 'Escape') { if (fb.mode) { fb.mode = null; fbRefresh(); } else select(null); }
+  else if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && !e.shiftKey) { if (fbUndo()) e.preventDefault(); }
   else if (e.key === 'i' || e.key === 'I') fbSetMode('in');
   else if (e.key === 'o' || e.key === 'O') fbSetMode('out');
   else if (e.key === 'w' || e.key === 'W') fbSetMode('lasso');
