@@ -377,10 +377,12 @@ function drawOutline(f, strong) {
   if (!g) {
     outline.push(new google.maps.Circle({ map, center: { lat: f.lat, lng: f.lng }, radius: f.extent_km * 500, fillOpacity: 0, ...style }));
   } else if (f.shore && g.type.endsWith('Polygon')) {
-    // seas and gulfs: tint the water, but stroke only the real shore, not the straight open-water closing lines
+    // seas and gulfs: tint the water, but stroke only the real shore, not the straight open-water closing lines.
+    // Also polygons cut at the 180th meridian or closed through the pole (build.py seam_shore): no fake seam lines.
+    const sea = ['coastline', 'bay', 'strait', 'lagoon'].includes(f.category);
     const parts = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
     for (const part of parts)
-      outline.push(new google.maps.Polygon({ map, paths: part.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .1 : .04, ...style, strokeOpacity: 0 }));
+      outline.push(new google.maps.Polygon({ map, paths: part.map(ring), fillColor: '#ffe27a', fillOpacity: sea ? (strong ? .1 : .04) : (strong ? .08 : 0), ...style, strokeOpacity: 0 }));
     for (const l of f.shore.coordinates) outline.push(new google.maps.Polyline({ map, path: ring(l), ...style }));
   } else if (g.type === 'Polygon') {
     outline.push(new google.maps.Polygon({ map, paths: g.coordinates.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
@@ -388,9 +390,16 @@ function drawOutline(f, strong) {
     // one Polygon per part: as a single multi-path Polygon, overlapping parts punch holes in each other
     for (const part of g.coordinates)
       outline.push(new google.maps.Polygon({ map, paths: part.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .08 : 0, ...style }));
-  } else if (g.type === 'LineString') {
+  }
+  if (f.belt && /LineString/.test(g?.type || '')) {
+    // the river's channel belt: a faint fill so the wide floodplain reads as part of it
+    const parts = f.belt.type === 'Polygon' ? [f.belt.coordinates] : f.belt.coordinates;
+    for (const part of parts)
+      outline.push(new google.maps.Polygon({ map, paths: part.map(ring), fillColor: '#ffe27a', fillOpacity: strong ? .07 : .03, ...style, strokeOpacity: style.strokeOpacity * .35, strokeWeight: 1 }));
+  }
+  if (g?.type === 'LineString') {
     outline.push(new google.maps.Polyline({ map, path: ring(g.coordinates), ...style, strokeWeight: style.strokeWeight + 1 }));
-  } else if (g.type === 'MultiLineString') {
+  } else if (g?.type === 'MultiLineString') {
     for (const l of g.coordinates) outline.push(new google.maps.Polyline({ map, path: ring(l), ...style, strokeWeight: style.strokeWeight + 1 }));
   }
 }
@@ -494,7 +503,8 @@ function updateContext() {
     const b = f.bbox;
     if (!f.geometry || (b && (c.lng < b[0] - 1 || c.lng > b[2] + 1 || c.lat < b[1] - 1 || c.lat > b[3] + 1))) continue;
     if (f._kind === 'area' && geometryContains(f.geometry, c.lng, c.lat)) inside.push(f);
-    else if (f._kind === 'line' && distToLineKm(c, f.geometry) <= Math.max(riverWidthKm(f) / 2 + 0.3, 60 * mpp / 1000)) near.push(f);
+    else if (f._kind === 'line' && (distToLineKm(c, f.geometry) <= Math.max(riverWidthKm(f) / 2 + 0.3, 60 * mpp / 1000)
+      || (f.belt && geometryContains(f.belt, c.lng, c.lat)))) near.push(f);
   }
   inside.sort((a, b) => a.extent_km - b.extent_km);
   const el = $('context');
@@ -525,6 +535,8 @@ function whatsHere(p) {
       const b = f.bbox, pad = tolKm / 100;
       if (!b || (p.lng >= b[0] - pad && p.lng <= b[2] + pad && p.lat >= b[1] - pad && p.lat <= b[3] + pad))
         near = distToLineKm(p, g) <= tolKm;
+      // anastomosing rivers (Cooper Creek, Darling…) carry a channel-belt polygon many km wider than the line
+      if (!near && f.belt) near = geometryContains(f.belt, p.lng, p.lat);
     } else {
       const dPx = haversineKm(p, f) * 1000 / mpp;
       near = dPx < Math.max(14, f.extent_km * 500 / mpp);
