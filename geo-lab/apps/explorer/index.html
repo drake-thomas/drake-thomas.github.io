@@ -251,7 +251,7 @@ function visibleCandidates(z, view) {
     const b = f.bbox;
     if (b) {
       if (b[3] < view.s || b[1] > view.n) continue;
-      if (view.w <= view.e && (b[2] < view.w || b[0] > view.e)) continue;
+      if (view.w <= view.e ? (b[2] < view.w || b[0] > view.e) : (b[0] > view.e && b[2] < view.w)) continue;  // view may cross 180°
     } else {
       const padLat = f.extent_km / 111;
       if (f.lat < view.s - padLat || f.lat > view.n + padLat || !lngIn(f.lng, { w: view.w - padLat * 2, e: view.e + padLat * 2 })) continue;
@@ -260,11 +260,13 @@ function visibleCandidates(z, view) {
     const sizePx = f.extent_km * 1000 / mpp;
     const sel = f === state.selected;
     const sticky = shownAt.has(f.id) && shownAt.get(f.id) <= z + 1e-6;
+    let established = 0;  // how long it has qualified: long-qualified big features beat ones that barely made it
     if (sticky) {
       // already on screen from a lower zoom: keep it (subject only to the too-big rule below)
     } else if (f.vis_zoom != null) {
       // Measured prominence: the zoom where it starts to stand out.
       const gap = f.vis_zoom + densityShift + (f.curated ? 0 : 0.5) - z;
+      established = Math.min(3, Math.max(0, -gap));
       if (gap > 0 && !sel) {
         if (gap <= MAX_EARLY && f.curated && !f.marine && sizePx < 3.5 * diag) nearMiss.push({ f, sizePx, gap });
         continue;
@@ -279,7 +281,11 @@ function visibleCandidates(z, view) {
     }
     // too big: we're inside it (rivers never hide for size; areas get more headroom than points)
     if (f._kind !== 'line' && sizePx > (f._kind === 'area' ? 7 : 3.5) * diag && !sel) continue;
-    out.push({ f, sizePx, prio: (sel ? 1e6 : 0) + (sticky ? 6 : 0) + f.salience * 10 + (f.curated ? 8 : 0) + Math.min(12, Math.log2(sizePx)) });
+    // size priority: rivers by visible width, not length (a long river's edge anchor was culling Lake Baikal);
+    // areas filling the screen are context, not the subject
+    const sizePrio = f._kind === 'line' ? Math.min(12, Math.log2(Math.max(1, riverWidthKm(f) * 1000 / mpp) * 40))
+      : Math.min(12, Math.log2(sizePx)) - (f._kind === 'area' && sizePx > 1.5 * diag ? 8 : 0);
+    out.push({ f, sizePx, prio: (sel ? 1e6 : 0) + (sticky ? 6 : 0) + 3 * established + f.salience * 10 + (f.curated ? 8 : 0) + sizePrio });
   }
   // Sparse view: show the features that come closest to qualifying, so wide empty
   // stretches still say *something* about what's there.
@@ -297,8 +303,11 @@ function visibleCandidates(z, view) {
   let extra = 0;
   for (const c of nearMiss) {
     const cell = cellOf(c.f);
-    const needFill = cell >= 0 && !filled.has(cell);
-    const needMin = out.length + extra < MIN_LABELS && c.gap <= 1.75;
+    // fill only with things nearly visible: far-off fill labels were invisible (Udachnaya, Yakutsk at z6), and
+    // rivers fill badly (a hairline label in an empty view), so they must be within half a level
+    const maxGap = c.f._kind === 'line' ? 0.5 : 1.5;
+    const needFill = cell >= 0 && !filled.has(cell) && c.gap <= maxGap;
+    const needMin = out.length + extra < MIN_LABELS && c.gap <= Math.min(1.75, maxGap);
     if (!needFill && !needMin) continue;
     if (cell >= 0) filled.add(cell);
     out.push({ f: c.f, sizePx: c.sizePx, faint: true, prio: c.f.salience * 10 - c.gap * 10 });
