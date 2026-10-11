@@ -91,9 +91,11 @@
       <button id="fbOut" title="Click points that should NOT be inside it (O)">− outside (O)</button>
       <button id="fbLasso" title="Draw a loop around something unlabeled (W)">◯ what's this? (W)</button>
     </div>
+    <div class="small fbwarn" id="fbWarn" hidden>Not attached to any feature. Open a card (click a label) with the feature on screen, or draw a loop with W.</div>
     <textarea id="fbNote" rows="2" placeholder="Optional note (what's wrong, what you think it is…)"></textarea>
     <div class="row"><button class="primary" id="fbSend">Send</button><button id="fbClear">Clear</button>
-      <span class="grow"></span><span id="fbQueue" class="small muted" title="Click to copy queued feedback"></span></div>
+      <span class="grow"></span><button id="fbQueue" class="linkish small" title="Review, edit or copy queued feedback"></button></div>
+    <div id="fbList" hidden></div>
   </div>
   <div id="info" class="panel hidden"></div>
 </div>
@@ -158,7 +160,7 @@ async function main() {
   window.__geo = { map };  // debugging / headless tests
   layer = makeLabelLayer(gm);
   layer.setMap(map);
-  map.addListener('idle', () => { writeHash(); updateZoomInfo(); updateContext(); });
+  map.addListener('idle', () => { writeHash(); updateZoomInfo(); updateContext(); if (!$('fb').classList.contains('hidden')) fbRefresh(); });
   map.addListener('click', e => { if (fbPointClick(e.latLng.toJSON())) return; whatsHere(e.latLng.toJSON()); });
   $('status').remove();
   buildFilters();
@@ -395,6 +397,7 @@ function markVisited(f) {
 }
 
 function select(f, fly = false) {
+  queueMicrotask(() => { if (!$('fb').classList.contains('hidden')) fbRefresh(); });
   markVisited(f);
   state.selected = f;
   drawOutline(f, true);
@@ -641,12 +644,30 @@ function updateZoomInfo() {
 const fb = { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [] };
 const FB_KEY = 'geolab.feedback.queue';
 const fbQueue = () => { try { return JSON.parse(localStorage.getItem(FB_KEY) || '[]'); } catch { return []; } };
+// What the feedback is about: the feature being corrected, else the open card's feature if it's on screen.
+function fbOnScreen(f) {
+  const b = map.getBounds(); if (!f || !b) return false;
+  if (f.bbox) {
+    const ne = b.getNorthEast(), sw = b.getSouthWest();
+    const v = { n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng() };
+    if (f.bbox[3] < v.s || f.bbox[1] > v.n) return false;
+    return v.w > v.e || !(f.bbox[2] < v.w || f.bbox[0] > v.e);
+  }
+  return b.contains({ lat: f.lat, lng: f.lng });
+}
+const fbSubject = () => (fb.lasso || fb.mode === 'lasso') ? null  // "what's this?" is about something unlabeled
+  : fb.target || (fbOnScreen(state.selected) ? state.selected : null);
 function fbRefresh() {
   const q = fbQueue();
-  $('fbQueue').textContent = q.length ? `${q.length} queued · copy` : '';
+  const subj = fbSubject();
+  $('fbQueue').textContent = q.length ? `${q.length} queued ▾` : '';
+  $('fbQueue').hidden = !q.length;
+  if (!$('fbList').hidden) fbRenderList();
   for (const [id, m] of [['fbIn', 'in'], ['fbOut', 'out'], ['fbLasso', 'lasso']]) $(id).classList.toggle('on', fb.mode === m);
-  $('fbTitle').textContent = fb.target ? `Feedback · ${fb.target.name}` : (fb.lasso ? "What's this?" : 'Feedback');
-  $('fbHelp').textContent = fb.mode === 'in' ? 'Click spots that should be inside this feature.'
+  $('fbTitle').textContent = subj ? `Feedback · ${subj.name}` : (fb.lasso ? "What's this?" : 'Feedback');
+  $('fbWarn').hidden = !!(subj || fb.lasso || fb.mode === 'lasso' || !$('fbNote').value.trim());
+  fb.confirmUnattached = false;
+  if (fb.flash && Date.now() - fb.flashAt < 5000) { $('fbHelp').textContent = fb.flash; } else $('fbHelp').textContent = fb.mode === 'in' ? 'Click spots that should be inside this feature.'
     : fb.mode === 'out' ? 'Click spots that are wrongly inside this feature.'
     : fb.mode === 'lasso' ? 'Drag a loop around the thing you want identified.'
     : `${fb.inPts.length} inside · ${fb.outPts.length} outside${fb.lasso ? ' · 1 loop' : ''}. Select a feature for I/O, or use W anywhere.`;
@@ -676,10 +697,16 @@ function fbClear() {
 }
 async function fbSend() {
   if (!fb.inPts.length && !fb.outPts.length && !fb.lasso && !$('fbNote').value.trim()) { $('fbHelp').textContent = 'Nothing to send yet.'; return; }
+  const subj = fbSubject();
+  if (!subj && !fb.lasso && !fb.confirmUnattached) {
+    fb.confirmUnattached = true; $('fbWarn').hidden = false;
+    $('fbHelp').textContent = 'This isn\'t attached to a feature. Press Send again to send it anyway.';
+    return;
+  }
   const c = map.getCenter();
   const item = {
-    type: fb.lasso ? 'request' : 'correction', ts: new Date().toISOString(),
-    feature_id: fb.target?.id || null, feature_name: fb.target?.name || null,
+    type: fb.lasso ? 'request' : (fb.inPts.length || fb.outPts.length ? 'correction' : 'note'), ts: new Date().toISOString(),
+    feature_id: subj?.id || null, feature_name: subj?.name || null,
     include: fb.inPts, exclude: fb.outPts, lasso: fb.lasso, note: $('fbNote').value.trim(),
     view: { lat: +c.lat().toFixed(4), lng: +wrapLng(c.lng()).toFixed(4), z: +map.getZoom().toFixed(1) }, url: location.href,
   };
@@ -688,20 +715,40 @@ async function fbSend() {
     const r = await fetch('../../api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
     stored = r.ok;
   } catch {}
-  if (!stored) { const q = fbQueue(); q.push(item); try { localStorage.setItem(FB_KEY, JSON.stringify(q)); } catch {} }
+  if (!stored) { const q = fbQueue(); q.push(item); fbSave(q); }
   fbClear();
-  $('fbHelp').textContent = stored ? 'Sent ✓' : 'Saved here ✓. Click "queued · copy" to copy it all and paste it to Claude.';
-}
-async function fbCopy() {
-  const q = fbQueue();
-  if (!q.length) return;
-  const text = q.map(x => JSON.stringify(x)).join('\n');
-  try { await navigator.clipboard.writeText(text); } catch {}
-  if (confirmClear()) localStorage.removeItem(FB_KEY);
+  fb.flash = stored ? 'Sent ✓' : 'Saved here ✓. Open "queued" to review, edit or copy.'; fb.flashAt = Date.now();
   fbRefresh();
-  $('fbHelp').textContent = `Copied ${q.length} item${q.length > 1 ? 's' : ''}. Paste it into the chat with Claude.`;
 }
-const confirmClear = () => true;  // copying hands them off; the clipboard holds the only copy afterwards
+const fbSave = q => { try { localStorage.setItem(FB_KEY, JSON.stringify(q)); } catch {} };
+function fbRenderList() {
+  const q = fbQueue();
+  const kind = x => x.type === 'request' ? "What's this?" : x.type === 'note' ? 'Note' : 'Outline';
+  $('fbList').innerHTML = q.map((x, i) => `<div class="fbitem" data-i="${i}">
+      <div class="row small"><b>${kind(x)}</b><span class="muted grow">${esc(x.feature_name || (x.type === 'request' ? 'unlabeled area' : 'no feature attached'))}${
+        x.include?.length || x.exclude?.length ? ` · ${x.include.length} in, ${x.exclude.length} out` : ''}</span>
+        <button data-act="show" title="Go to this view">Show</button><button data-act="del" title="Delete this item">Delete</button></div>
+      <textarea id="fbq-${i}" rows="1" placeholder="Note">${esc(x.note || '')}</textarea></div>`).join('')
+    + (q.length ? `<div class="row"><button class="primary" data-act="copy">Copy all</button><button data-act="clear">Clear all</button><span class="small muted grow" id="fbListMsg"></span></div>` : '');
+}
+$('fbList').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const q = fbQueue(), i = +b.closest('.fbitem')?.dataset.i;
+  if (b.dataset.act === 'del') { q.splice(i, 1); fbSave(q); fbRefresh(); }
+  else if (b.dataset.act === 'show') { const v = q[i].view; map.moveCamera({ center: { lat: v.lat, lng: v.lng }, zoom: v.z }); }
+  else if (b.dataset.act === 'copy') {
+    const text = q.map(x => JSON.stringify(x)).join('\n');
+    let ok = true; try { await navigator.clipboard.writeText(text); } catch { ok = false; }
+    $('fbListMsg').textContent = ok ? `Copied ${q.length}. Paste into the chat, then Clear all.` : 'Copy failed: your browser blocked the clipboard.';
+  } else if (b.dataset.act === 'clear') {
+    if (b.dataset.armed) { fbSave([]); $('fbList').hidden = true; fbRefresh(); }
+    else { b.dataset.armed = '1'; b.textContent = 'Really clear?'; }
+  }
+});
+$('fbList').addEventListener('change', e => {
+  const t = e.target.closest('textarea'); if (!t) return;
+  const q = fbQueue(), i = +t.closest('.fbitem').dataset.i; q[i].note = t.value.trim(); fbSave(q);
+});
 // freehand lasso
 (() => {
   let pts = null;
@@ -730,7 +777,8 @@ $('fbOut').onclick = () => fbSetMode('out');
 $('fbLasso').onclick = () => fbSetMode('lasso');
 $('fbSend').onclick = fbSend;
 $('fbClear').onclick = fbClear;
-$('fbQueue').onclick = fbCopy;
+$('fbNote').addEventListener('input', () => { $('fbWarn').hidden = !!(fbSubject() || fb.lasso || !$('fbNote').value.trim()); });
+$('fbQueue').onclick = () => { $('fbList').hidden = !$('fbList').hidden; if (!$('fbList').hidden) fbRenderList(); };
 
 // ---------- keyboard + URL ----------
 addEventListener('keydown', e => {

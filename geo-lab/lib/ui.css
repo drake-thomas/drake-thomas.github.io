@@ -91,3 +91,9 @@ a.glink:hover { color: #ffe27a; border-bottom-color: #ffe27a; }
 .wikipanel .wp-summary { padding: 10px 14px; font-size: 13px; color: var(--muted); display: flex; gap: 10px; max-height: 32vh; overflow: auto; }
 .wikipanel .wp-summary img { width: 96px; height: 96px; object-fit: cover; border-radius: 6px; flex: none; }
 .wikipanel .wp-frame { flex: 1; border: 0; background: #fff; }
+
+.fbwarn { color: #e8b04a; margin: 4px 0; }
+.fbitem { border-top: 1px solid rgba(255,255,255,.12); padding-top: 6px; margin-top: 6px; display: grid; gap: 4px; }
+.fbitem textarea { width: 100%; }
+#fbList { max-height: 40vh; overflow: auto; }
+.linkish { background: none; border: none; color: inherit; opacity: .75; cursor: pointer; padding: 0; text-decoration: underline dotted; }
