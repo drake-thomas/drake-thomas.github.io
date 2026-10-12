@@ -1,0 +1,7 @@
+{
+  "_why": "Blob ids (old or new) whose earlier verdicts must NOT carry over: the owner asked for them to be re-shown in their regrouped form. The app clears local verdicts older than the queue build for these (and for the blobs they map to). Reasons are the owner's notes.",
+  "ids": {
+    "pa:R6793881": "maybe: 'maybe yes if unioned with triangular guy to NW' (Niassa National Reserve, 2026-10-12)",
+    "pa:WDPA:34045": "maybe: 'needs unioning with its friends to the west' (Uru-Eu-Wau-Wau, 2026-10-12)"
+  }
+}
