@@ -112,6 +112,7 @@ import { metersPerPx, zoomForKm, geometryContains, fmtKm, haversineKm, pick } fr
 import { Linkifier } from '../../lib/linkify.js';
 import { openWiki } from '../../lib/wikipanel.js';
 import { sourceListHtml, bindSources } from '../../lib/sources.js';
+import { FB_NAME, lsGet, lsSet, fbPost, fbQueue, fbSave } from '../../lib/feedback.js';
 
 const CATS = {  // category -> [group, color]
   'impact-crater': ['Geologic', '#ff7a59'], 'geologic-structure': ['Geologic', '#ff9f68'],
@@ -769,23 +770,6 @@ function updateZoomInfo() {
 // (tools/feedback_worker), pulled into data/feedback/ by tools/feedback_pull.py. Anything that fails to send
 // queues in localStorage, where it can be edited, re-sent or copied.
 const fb = { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [], undo: [] };
-const FB_KEY = 'geolab.feedback.queue', FB_NAME = 'geolab.feedback.name', FB_OWNER = 'geolab.feedback.key';
-const FB_URL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? '../../api/feedback'
-  : 'https://geolab-feedback.grahamsnumberisbig.workers.dev/feedback';
-const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
-const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-// ?fbkey=… (given to the site owner) marks this browser's feedback as verified; stripped from the URL once stored.
-(() => {
-  const u = new URL(location.href), k = u.searchParams.get('fbkey');
-  if (k) { lsSet(FB_OWNER, k); u.searchParams.delete('fbkey'); history.replaceState(null, '', u); }
-})();
-async function fbPost(item) {
-  try {
-    const r = await fetch(FB_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...item, name: lsGet(FB_NAME) || item.name || '', key: lsGet(FB_OWNER) || undefined }) });
-    return r.ok ? 'ok' : r.status === 429 ? 'limited' : 'fail';
-  } catch { return 'fail'; }
-}
 function fbRenderWho() {
   const name = lsGet(FB_NAME);
   $('fbWho').innerHTML = name && !fb.editName
@@ -795,7 +779,6 @@ function fbRenderWho() {
   if (inp) inp.onchange = () => { const v = inp.value.trim(); if (v) { lsSet(FB_NAME, v); fb.editName = false; fbRenderWho(); } };
   else $('fbNameEdit').onclick = () => { fb.editName = true; fbRenderWho(); $('fbName').focus(); };
 }
-const fbQueue = () => { try { return JSON.parse(localStorage.getItem(FB_KEY) || '[]'); } catch { return []; } };
 // What the feedback is about: the feature being corrected, else the open card's feature if it's on screen.
 function fbOnScreen(f) {
   const b = map.getBounds(); if (!f || !b) return false;
@@ -884,7 +867,6 @@ async function fbSend() {
     : 'Couldn\'t reach the server, so it\'s saved here. Open "queued" to retry, edit or copy.'; fb.flashAt = Date.now();
   fbRefresh();
 }
-const fbSave = q => { try { localStorage.setItem(FB_KEY, JSON.stringify(q)); } catch {} };
 function fbRenderList() {
   const q = fbQueue();
   const kind = x => x.type === 'request' ? "What's this?" : x.type === 'note' ? 'Note' : 'Outline';

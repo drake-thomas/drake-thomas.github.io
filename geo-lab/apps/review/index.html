@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Geo Lab Review</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../../lib/ui.css">
+<script src="../../config.js"></script>
+<style>
+  :root { --side: 360px; --blob: #ffd23f; --member: #4fe3ff; --yes: #5ad17a; --no: #ff6b6b; --maybe: #f0b84a; --fix: #c58cff; }
+  #mapWrap { position: fixed; top: 0; left: 0; bottom: 0; right: var(--side); }
+  #map { width: 100%; height: 100%; }
+  #retry[hidden] { display: none; }
+  #side { position: fixed; top: 0; right: 0; bottom: 0; width: var(--side); z-index: 10; display: flex; flex-direction: column;
+    background: var(--panel-solid); border-left: 1px solid var(--line); }
+  #head { padding: 10px 12px 8px; border-bottom: 1px solid var(--line); display: grid; gap: 6px; }
+  #head .row { gap: 6px; }
+  #head select, #head input[type=number] { padding: 4px 6px; font-size: 13px; }
+  #head input[type=number] { width: 62px; font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; }
+  #head label { font-size: 13px; display: inline-flex; gap: 4px; align-items: center; }
+  #prog { font-variant-numeric: tabular-nums; }
+  #body { flex: 1; overflow: auto; padding: 10px 12px; min-height: 0; }
+  #title { font-size: 18px; margin: 0; line-height: 1.25; }
+  #title .prev { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px; vertical-align: 2px; margin-left: 4px; color: #111; }
+  .v-yes { background: var(--yes); } .v-no { background: var(--no); } .v-maybe { background: var(--maybe); } .v-fix { background: var(--fix); }
+  #meta { margin: 3px 0 8px; }
+  #meta b { color: var(--text); font-weight: 600; }
+  #members { display: grid; gap: 2px; }
+  .mem { padding: 5px 7px; border-radius: 7px; cursor: pointer; border: 1px solid transparent; font-size: 13px; }
+  .mem:hover, .mem.hl { background: #232a33; border-color: #35506a; }
+  .mem .nm { font-weight: 600; }
+  .mem .sub { color: var(--muted); font-size: 12px; }
+  .mem .vis { color: #c9b98a; font-size: 11.5px; margin-top: 2px; }
+  .mem a { color: #9fd8ff; text-decoration: none; }
+  .sc { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .sc.hi { color: var(--yes); } .sc.mid { color: var(--maybe); } .sc.lo { color: var(--muted); }
+  #foot { border-top: 1px solid var(--line); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); display: grid; gap: 8px; }
+  #verdicts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #verdicts button { padding: 12px 4px; font-size: 15px; font-weight: 700; border-width: 2px; }
+  #verdicts button kbd { font-size: 11px; margin-left: 3px; opacity: .8; }
+  #vy { border-color: var(--yes); } #vn { border-color: var(--no); } #vm { border-color: var(--maybe); } #vf { border-color: var(--fix); }
+  #verdicts button.cur, #verdicts button.armed { color: #111; }
+  #vy.cur, #vy.armed { background: var(--yes); } #vn.cur, #vn.armed { background: var(--no); }
+  #vm.cur, #vm.armed { background: var(--maybe); } #vf.cur, #vf.armed { background: var(--fix); }
+  #verdicts button.armed { outline: 2px solid #fff; outline-offset: 1px; }
+  #note { width: 100%; font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; padding: 6px 8px; resize: none; }
+  #nav button { padding: 7px 10px; }
+  #flash { min-height: 1.3em; }
+  #flash.err { color: var(--warn); }
+  #who input { font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; padding: 4px 8px; min-width: 0; flex: 1; }
+  #tip { position: fixed; z-index: 20; pointer-events: none; background: rgba(10,12,15,.92); border: 1px solid #35506a; border-radius: 6px;
+    padding: 3px 8px; font-size: 12.5px; white-space: nowrap; transform: translate(12px, -50%); }
+  #help { font-size: 12px; }
+  #help kbd { font-size: 11px; }
+  #legend { position: fixed; left: 10px; bottom: 22px; z-index: 5; font-size: 12px; padding: 5px 10px; }
+  #legend i { display: inline-block; width: 16px; height: 0; vertical-align: 3px; margin-right: 4px; }
+  #status { position: fixed; top: 12px; left: 12px; z-index: 6; font-size: 13px; padding: 6px 10px; }
+  #zbtns { position: fixed; top: 12px; right: calc(var(--side) + 12px); z-index: 6; display: flex; gap: 6px; }
+  #zbtns button { padding: 6px 10px; font-size: 13px; }
+  #zbtns button.on { background: #ffe27a; color: #1a1500; }
+  @media (max-width: 760px) {
+    :root { --side: 0px; }
+    #mapWrap { right: 0; bottom: 48vh; }
+    #side { top: auto; left: 0; height: 48vh; width: auto; border-left: none; border-top: 1px solid var(--line); }
+    #zbtns { right: 10px; top: 10px; }
+    #legend { bottom: calc(48vh + 8px); }
+    #help { display: none; }
+    #head { padding: 6px 10px; }
+    #body { padding: 6px 10px; }
+    #title { font-size: 16px; }
+    #verdicts button { padding: 14px 4px; }
+    #verdicts button kbd { display: none; }
+  }
+</style>
+</head>
+<body class="fullbleed">
+<div id="mapWrap"><div id="map"></div></div>
+<div id="zbtns">
+  <button id="zToggle" title="Toggle zoom out one level (Z)">Zoom out (Z)</button>
+  <button id="labelsBtn" title="Toggle map labels (L)">Labels (L)</button>
+  <button id="refit" title="Re-fit to the blob (0)">Fit (0)</button>
+</div>
+<div id="legend" class="panel muted"><i style="border-top:3px solid var(--blob)"></i>blob &nbsp; <i style="border-top:1.5px solid var(--member)"></i>member borders &nbsp; <i style="border-top:1.5px dashed #fff;opacity:.6"></i>other queue blobs</div>
+<div id="status" class="panel muted">Loading…</div>
+<div id="tip" hidden></div>
+
+<aside id="side">
+  <div id="head">
+    <div class="row"><b class="grow">Protected areas · gavel</b><span id="prog" class="small muted"></span></div>
+    <div class="row">
+      <select id="fRegion" title="Region"><option value="">All regions</option><option value="africa">Africa</option><option value="asia">S/SE Asia</option><option value="samerica">S. America</option></select>
+      <label title="Minimum blob score (area-weighted edge contrast; blank = include unmeasured)">score ≥ <input id="fMin" type="number" step="1" min="0" placeholder="any"></label>
+      <label title="Skip blobs you've already gavelled"><input id="fUnrev" type="checkbox" checked> unreviewed</label>
+    </div>
+  </div>
+  <div id="body">
+    <h2 id="title"></h2>
+    <div id="meta" class="small muted"></div>
+    <div id="members"></div>
+  </div>
+  <div id="foot">
+    <div id="verdicts">
+      <button id="vy" data-v="yes" title="Yes, add it (Y)">Yes<kbd>Y</kbd></button>
+      <button id="vn" data-v="no" title="No (N)">No<kbd>N</kbd></button>
+      <button id="vm" data-v="maybe" title="Maybe (M)">Maybe<kbd>M</kbd></button>
+      <button id="vf" data-v="fix" title="Yes but the outline needs work (F)">Fix<kbd>F</kbd></button>
+    </div>
+    <textarea id="note" rows="1" placeholder="Note (/ to type; Enter sends with the armed verdict; Shift+Y/N/M/F arms one)"></textarea>
+    <div id="nav" class="row">
+      <button id="prev" title="Previous (←)">← Prev</button><button id="next" title="Next (→)">Next →</button>
+      <span id="flash" class="small muted grow"></span>
+      <button id="retry" class="linkish small" hidden></button>
+    </div>
+    <div id="who" class="row small"></div>
+    <div id="help" class="muted"><kbd>Y</kbd> yes <kbd>N</kbd> no <kbd>M</kbd> maybe <kbd>F</kbd> fix outline · <kbd>Shift</kbd>+key or <kbd>/</kbd> = add a note, <kbd>Enter</kbd> sends ·
+      <kbd>←</kbd><kbd>→</kbd> move · <kbd>Z</kbd> zoom out/in · <kbd>-</kbd><kbd>=</kbd> zoom · <kbd>0</kbd> refit · <kbd>L</kbd> labels</div>
+  </div>
+</aside>
+
+<script type="module">
+import { loadMaps, loadJSON } from '../../lib/maps.js';
+import { FB_NAME, FB_OWNER, lsGet, lsSet, fbPost, fbQueue, fbSave } from '../../lib/feedback.js';
+
+const QUEUE = 'protected';
+const DATA = '../../data/review/';
+const VKEY = `geolab.review.${QUEUE}`, SKEY = `geolab.review.${QUEUE}.state`;
+const VERDICTS = { y: 'yes', n: 'no', m: 'maybe', f: 'fix' };
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+let map, gm, index = [], byId = new Map(), regionData = {}, regionLoading = {}, list = [], pos = 0;
+let shapes = [], ctxShapes = [], memberPolys = [], fitZoom = null, zoomedOut = false, armed = null, hlRef = null, scale = 1e4;
+const verdicts = (() => { try { return JSON.parse(localStorage.getItem(VKEY) || '{}'); } catch { return {}; } })();
+const saveVerdicts = () => { try { localStorage.setItem(VKEY, JSON.stringify(verdicts)); } catch {} };
+const st = Object.assign({ region: '', min: '', unrev: true, id: null, labels: false },
+  (() => { try { return JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { return {}; } })());
+const saveState = () => { try { localStorage.setItem(SKEY, JSON.stringify(st)); } catch {} };
+
+// ---------- data ----------
+function decodeRing(r) {
+  const out = []; let x = 0, y = 0;
+  for (let i = 0; i < r.length; i += 2) { x += r[i]; y += r[i + 1]; out.push({ lat: y / scale, lng: x / scale }); }
+  if (out.length) out.push(out[0]);
+  return out;
+}
+const decode = g => g.flatMap(poly => poly.map(decodeRing));  // all rings (outer + holes) as closed paths
+function loadRegion(r) {
+  if (regionData[r]) return Promise.resolve(regionData[r]);
+  return regionLoading[r] ||= loadJSON(DATA + `protected_${r}.json`).then(d => { scale = d.scale || 1e4; return (regionData[r] = d.blobs); });
+}
+
+// ---------- list / filters ----------
+function rebuild(keepId) {
+  const min = st.min === '' ? null : +st.min;
+  list = index.filter(b => (!st.region || b.region === st.region) && (min === null || (b.rank ?? -1) >= min)
+    && (!st.unrev || !verdicts[b.id] || b.id === keepId));
+  pos = Math.max(0, keepId ? list.findIndex(b => b.id === keepId) : 0);
+  if (pos < 0) pos = 0;
+}
+function progress() {
+  const done = index.filter(b => verdicts[b.id]).length;
+  const c = { yes: 0, no: 0, maybe: 0, fix: 0 }; for (const k in verdicts) c[verdicts[k].v] = (c[verdicts[k].v] || 0) + 1;
+  const left = list.filter(b => !verdicts[b.id]).length;
+  $('prog').innerHTML = list.length ? `${pos + 1} / ${list.length} · ${left} left · ${done} done` : `0 match · ${done} done`;
+  $('prog').title = `yes ${c.yes} · no ${c.no} · maybe ${c.maybe} · fix ${c.fix}`;
+}
+
+// ---------- rendering ----------
+const scoreCls = s => s == null ? 'lo' : s >= 6 ? 'hi' : s >= 2 ? 'mid' : 'lo';
+const fmtScore = s => s == null ? '–' : (+s).toFixed(s >= 10 ? 0 : 1);
+const refLink = ref => ref.startsWith('WDPA:') ? `https://www.protectedplanet.net/${ref.slice(5)}`
+  : `https://www.openstreetmap.org/${{ R: 'relation', W: 'way', N: 'node' }[ref[0]] || 'relation'}/${ref.slice(1)}`;
+const wikiLink = w => { const m = /^([a-z-]+):(.+)$/.exec(w || ''); return m ? `https://${m[1]}.wikipedia.org/wiki/${encodeURIComponent(m[2].replace(/ /g, '_'))}` : null; };
+const fmtArea = k => k >= 10000 ? `${(k / 1000).toFixed(0)}k km²` : `${k.toLocaleString()} km²`;
+
+function clear(arr) { arr.forEach(s => s.setMap(null)); arr.length = 0; }
+
+async function show(i) {
+  if (!list.length) {
+    clear(shapes); clear(ctxShapes); memberPolys = [];
+    $('title').textContent = 'Nothing left in this filter 🎉'; $('meta').textContent = 'Change the filters above, or untick "unreviewed" to revisit.';
+    $('members').innerHTML = ''; progress(); return;
+  }
+  pos = (i + list.length) % list.length;
+  const b = list[pos];
+  st.id = b.id; saveState();
+  history.replaceState(null, '', '#' + encodeURIComponent(b.id));
+  progress();
+  const v = verdicts[b.id];
+  $('title').innerHTML = `${esc(b.name)}${v ? ` <span class="prev v-${v.v}">${v.v}</span>` : ''}`;
+  $('meta').innerHTML = `${esc(b.country)} · ${{ africa: 'Africa', asia: 'S/SE Asia', samerica: 'S. America' }[b.region] || b.region} · <b>${fmtArea(b.km2)}</b>
+    · score <span class="sc ${scoreCls(b.rank)}" title="area-weighted member score, mostly-water members ignored (sort key)">${fmtScore(b.rank)}</span> (best ${fmtScore(b.score)}) · ${b.n} member${b.n > 1 ? 's' : ''}${v?.note ? `<br>your note: <i>${esc(v.note)}</i>` : ''}`;
+  $('note').value = v?.note || '';
+  setArmed(null);
+  for (const btn of document.querySelectorAll('#verdicts button')) btn.classList.toggle('cur', btn.dataset.v === v?.v);
+  // camera first (cheap), geometry when the region file is in
+  zoomedOut = false; $('zToggle').classList.remove('on');
+  fit(b);
+  if (!regionData[b.region]) { $('members').innerHTML = '<div class="muted small">Loading outlines…</div>'; clear(shapes); clear(ctxShapes); }
+  const blobs = await loadRegion(b.region);
+  if (list[pos] !== b) return;  // moved on meanwhile
+  draw(b, blobs[b.id]);
+  // prefetch the next blob's region
+  const nb = list[(pos + 1) % list.length]; if (nb) loadRegion(nb.region);
+}
+
+function fit(b) {
+  const [w, s, e, n] = b.bbox;
+  const narrow = innerWidth <= 760;
+  const pad = narrow ? { top: 30, bottom: 30, left: 20, right: 20 } : { top: 60, bottom: 50, left: 50, right: 50 };
+  // ~15% margin around the blob on top of the pixel padding
+  const dx = (e - w) * 0.15, dy = (n - s) * 0.15;
+  map.fitBounds({ west: w - dx, south: s - dy, east: e + dx, north: n + dy }, pad);
+  gm.event.addListenerOnce(map, 'idle', () => { fitZoom = map.getZoom(); });
+}
+
+function draw(b, d) {
+  clear(shapes); clear(ctxShapes); memberPolys = [];
+  if (!d) { $('members').innerHTML = '<div class="muted small">No outline data for this blob.</div>'; return; }
+  const multi = d.members.length > 1;
+  d.members.forEach((m, k) => {
+    const paths = decode(m.g);
+    const poly = new gm.Polygon({ map, paths, strokeColor: multi ? '#4fe3ff' : '#ffd23f', strokeOpacity: multi ? 0.9 : 0, strokeWeight: multi ? 1.4 : 0,
+      fillColor: '#4fe3ff', fillOpacity: 0.001, zIndex: 2 + k, clickable: true });
+    poly._m = m;
+    poly.addListener('mouseover', e => hl(m.ref, e));
+    poly.addListener('mousemove', e => moveTip(e));
+    poly.addListener('mouseout', () => hl(null));
+    poly.addListener('click', e => { hl(m.ref, e, true); document.querySelector(`.mem[data-ref="${CSS.escape(m.ref)}"]`)?.scrollIntoView({ block: 'nearest' }); });
+    shapes.push(poly); memberPolys.push(poly);
+  });
+  // blob outline on top, bold
+  for (const path of decode(d.g)) {
+    shapes.push(new gm.Polyline({ map, path, strokeColor: '#000', strokeOpacity: 0.55, strokeWeight: 5.5, zIndex: 50, clickable: false }));
+    shapes.push(new gm.Polyline({ map, path, strokeColor: '#ffd23f', strokeOpacity: 1, strokeWeight: 2.6, zIndex: 51, clickable: false }));
+  }
+  drawContext(b);
+  $('members').innerHTML = d.members.map(m => {
+    const wl = wikiLink(m.wiki);
+    return `<div class="mem" data-ref="${esc(m.ref)}">
+      <div class="row" style="gap:6px"><span class="nm grow">${esc(m.name)}</span><span class="sc ${scoreCls(Math.max(m.score ?? -1, m.gscore ?? -1) < 0 ? null : Math.max(m.score ?? -1, m.gscore ?? -1))}" title="EOX score${m.gscore != null ? ' / Google score' : ''}">${fmtScore(m.score)}${m.gscore != null ? ` / G ${fmtScore(m.gscore)}` : ''}</span></div>
+      <div class="sub">${esc(m.desig)}${m.year ? ` · ${m.year}` : ''} · ${fmtArea(m.km2)} · <a href="${refLink(m.ref)}" target="_blank" rel="noopener">${esc(m.ref)}</a>${(m.alt || []).map(r => ` · <a href="${refLink(r)}" target="_blank" rel="noopener">${esc(r)}</a>`).join('')}${wl ? ` · <a href="${wl}" target="_blank" rel="noopener">wiki</a>` : ''}</div>
+      ${m.vis ? `<div class="vis">👁 ${esc(m.vis)}</div>` : ''}</div>`;
+  }).join('');
+}
+
+// other queue blobs in view: thin dashed white, coloured by your verdict if any
+function drawContext(cur) {
+  const [w, s, e, n] = cur.bbox, mx = Math.max(e - w, n - s, 0.05) * 1.5;
+  const near = index.filter(b => b !== cur && b.region === cur.region && b.bbox[0] < e + mx && b.bbox[2] > w - mx && b.bbox[1] < n + mx && b.bbox[3] > s - mx).slice(0, 80);
+  const blobs = regionData[cur.region];
+  for (const b of near) {
+    const d = blobs?.[b.id]; if (!d) continue;
+    const v = verdicts[b.id]?.v, col = v ? getComputedStyle(document.documentElement).getPropertyValue(`--${v}`).trim() : '#ffffff';
+    for (const path of decode(d.g)) ctxShapes.push(new gm.Polyline({ map, path, strokeColor: col, strokeOpacity: 0,
+      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.65, strokeWeight: 1.5, scale: 2 }, offset: '0', repeat: '8px' }], zIndex: 1, clickable: false }));
+  }
+}
+
+function hl(ref, e, sticky) {
+  if (!sticky && hlRef?.sticky && ref === null) return;
+  hlRef = ref ? { ref, sticky } : null;
+  for (const p of memberPolys) {
+    const on = p._m.ref === ref;
+    p.setOptions({ fillOpacity: on ? 0.18 : 0.001, strokeWeight: on ? 2.4 : (memberPolys.length > 1 ? 1.4 : 0), strokeOpacity: on ? 1 : (memberPolys.length > 1 ? 0.9 : 0), strokeColor: on ? '#ffffff' : (memberPolys.length > 1 ? '#4fe3ff' : '#ffd23f') });
+  }
+  document.querySelectorAll('.mem').forEach(el => el.classList.toggle('hl', el.dataset.ref === ref));
+  const m = memberPolys.find(p => p._m.ref === ref)?._m;
+  if (m && e?.domEvent) { $('tip').innerHTML = `<b>${esc(m.name)}</b> · ${esc(m.desig)} · ${fmtArea(m.km2)} · ${fmtScore(m.score)}`; $('tip').hidden = false; moveTip(e); }
+  else if (!m) $('tip').hidden = true;
+  if (sticky) { clearTimeout(hl._t); hl._t = setTimeout(() => { hlRef = null; hl(null); }, 3500); }
+}
+function moveTip(e) {
+  const de = e?.domEvent; if (!de) return;
+  const t = de.touches?.[0] || de.changedTouches?.[0] || de;
+  if (t.clientX == null) return;
+  $('tip').style.left = t.clientX + 'px'; $('tip').style.top = t.clientY + 'px';
+}
+$('members').addEventListener('mouseover', e => { const el = e.target.closest('.mem'); if (el) hl(el.dataset.ref); });
+$('members').addEventListener('mouseleave', () => hl(null));
+$('members').addEventListener('click', e => {
+  if (e.target.closest('a')) return;
+  const el = e.target.closest('.mem'); if (!el) return;
+  const p = memberPolys.find(q => q._m.ref === el.dataset.ref); if (!p) return;
+  const bounds = new gm.LatLngBounds(); p.getPaths().forEach(path => path.forEach(ll => bounds.extend(ll)));
+  map.fitBounds(bounds, 60); hl(el.dataset.ref, null, true);
+});
+
+// ---------- verdicts ----------
+let flashT;
+function flash(msg, err) { $('flash').textContent = msg; $('flash').classList.toggle('err', !!err); clearTimeout(flashT); flashT = setTimeout(() => { $('flash').textContent = ''; }, 4000); }
+function setArmed(v) {
+  armed = v;
+  for (const btn of document.querySelectorAll('#verdicts button')) btn.classList.toggle('armed', btn.dataset.v === v);
+}
+function refreshRetry() {
+  const n = fbQueue().filter(x => x.type === 'review').length;
+  $('retry').hidden = !n; $('retry').textContent = `${n} unsent – retry`;
+}
+async function flushQueue() {
+  const q = fbQueue(); if (!q.some(x => x.type === 'review')) return;
+  const left = [];
+  for (const x of q) if (x.type !== 'review' || await fbPost(x) !== 'ok') left.push(x);
+  fbSave(left); refreshRetry();
+}
+async function gavel(v) {
+  const b = list[pos]; if (!b) return;
+  const note = $('note').value.trim();
+  const item = { type: 'review', queue: QUEUE, candidate_id: b.id, candidate_name: b.name, verdict: v, note, ts: new Date().toISOString() };
+  verdicts[b.id] = { v, note, ts: item.ts }; saveVerdicts();
+  $('note').blur(); setArmed(null);
+  // advance immediately; send in the background
+  const nextId = nextTarget();
+  show(nextId ? list.findIndex(x => x.id === nextId) : pos + 1);
+  const res = await fbPost(item);
+  if (res === 'ok') { flash(`✓ ${v}: ${b.name}`); flushQueue(); }
+  else { const q = fbQueue(); q.push(item); fbSave(q); flash(res === 'limited' ? 'Rate limited; saved to retry later' : 'Offline? Saved to retry later', true); }
+  refreshRetry();
+}
+function nextTarget() {  // the id we land on after gavelling the current one
+  for (let k = 1; k < list.length; k++) { const b = list[(pos + k) % list.length]; if (!verdicts[b.id]) return b.id; }
+  return null;  // everything in this filter is gavelled: just step on
+}
+$('retry').onclick = async () => { await flushQueue(); flash(fbQueue().some(x => x.type === 'review') ? 'Still unsent' : 'Sent ✓'); };
+for (const btn of document.querySelectorAll('#verdicts button')) btn.onclick = () => gavel(btn.dataset.v);
+$('note').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const v = armed || verdicts[list[pos]?.id]?.v;
+    if (v) gavel(v); else { flash('Pick a verdict: click a button, or Alt+Y/N/M/F', true); }
+  } else if (e.key === 'Escape') { $('note').blur(); setArmed(null); }
+  else if ((e.altKey || e.ctrlKey || e.metaKey) && VERDICTS[e.code?.replace('Key', '').toLowerCase()]) {
+    e.preventDefault(); gavel(VERDICTS[e.code.replace('Key', '').toLowerCase()]);
+  }
+});
+
+// ---------- keys ----------
+function zoomToggle() {
+  if (fitZoom == null) fitZoom = map.getZoom();
+  zoomedOut = !zoomedOut;
+  map.setZoom(zoomedOut ? fitZoom - 1 : fitZoom);
+  $('zToggle').classList.toggle('on', zoomedOut);
+  $('zToggle').textContent = zoomedOut ? 'Zoom in (Z)' : 'Zoom out (Z)';
+}
+function toggleLabels() { st.labels = !st.labels; saveState(); map.setMapTypeId(st.labels ? 'hybrid' : 'satellite'); $('labelsBtn').classList.toggle('on', st.labels); }
+$('zToggle').onclick = zoomToggle;
+$('labelsBtn').onclick = toggleLabels;
+$('refit').onclick = () => list[pos] && fit(list[pos]);
+$('prev').onclick = () => show(pos - 1);
+$('next').onclick = () => show(pos + 1);
+addEventListener('keydown', e => {
+  if (e.target.closest?.('textarea, input, select')) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (VERDICTS[k]) {
+    e.preventDefault();
+    if (e.shiftKey) { setArmed(VERDICTS[k]); $('note').focus(); }
+    else gavel(VERDICTS[k]);
+  } else if (e.key === 'ArrowRight') { e.preventDefault(); show(pos + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); show(pos - 1); }
+  else if (e.key === '/' || e.key === 'Enter') { e.preventDefault(); $('note').focus(); }
+  else if (k === 'z') zoomToggle();
+  else if (k === 'l') toggleLabels();
+  else if (k === '0') list[pos] && fit(list[pos]);
+  else if (e.key === '-' || e.key === '_') map.setZoom(map.getZoom() - 1);
+  else if (e.key === '=' || e.key === '+') map.setZoom(map.getZoom() + 1);
+});
+
+// ---------- filters ----------
+$('fRegion').value = st.region; $('fMin').value = st.min; $('fUnrev').checked = st.unrev;
+const onFilter = () => {
+  st.region = $('fRegion').value; st.min = $('fMin').value.trim(); st.unrev = $('fUnrev').checked; saveState();
+  const cur = list[pos]?.id; rebuild(cur); if (list[pos]?.id !== cur) pos = 0; show(pos);
+  $('fRegion').blur(); $('fUnrev').blur();
+};
+$('fRegion').onchange = onFilter; $('fUnrev').onchange = onFilter; $('fMin').onchange = onFilter;
+$('fMin').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('fMin').blur(); } });
+
+// ---------- who ----------
+function renderWho() {
+  const name = lsGet(FB_NAME), owner = !!lsGet(FB_OWNER);
+  $('who').innerHTML = name && !renderWho.edit
+    ? `<span class="muted grow">Sending as <b>${esc(name)}</b>${owner ? ' ✓' : ''}</span><button class="linkish small" id="whoEdit">change</button>`
+    : `<input id="whoName" maxlength="60" placeholder="Your name (remembered here)" value="${esc(name)}">`;
+  const inp = $('whoName');
+  if (inp) inp.onchange = () => { const v = inp.value.trim(); if (v) { lsSet(FB_NAME, v); renderWho.edit = false; renderWho(); } };
+  else $('whoEdit').onclick = () => { renderWho.edit = true; renderWho(); $('whoName').focus(); };
+}
+
+// ---------- boot ----------
+async function main() {
+  let idx;
+  [gm, idx] = await Promise.all([loadMaps(), loadJSON(DATA + 'protected_queue.json')]);
+  index = idx.blobs; index.forEach(b => byId.set(b.id, b));
+  map = new gm.Map($('map'), {
+    center: { lat: 0, lng: 20 }, zoom: 4, mapTypeId: st.labels ? 'hybrid' : 'satellite', tilt: 0,
+    disableDefaultUI: true, scaleControl: true, gestureHandling: 'greedy', clickableIcons: false,
+    isFractionalZoomEnabled: false, backgroundColor: '#000',
+    zoomControl: true, zoomControlOptions: { position: gm.ControlPosition.LEFT_CENTER },
+  });
+  $('labelsBtn').classList.toggle('on', st.labels);
+  window.__review = { map, list: () => list, pos: () => pos, verdicts, index };
+  $('status').remove();
+  renderWho(); refreshRetry();
+  const want = decodeURIComponent(location.hash.slice(1)) || st.id;
+  rebuild(byId.has(want) ? want : null);
+  await show(pos);
+  flushQueue();
+}
+main().catch(e => { $('status').textContent = 'Error: ' + e.message; console.error(e); });
+</script>
+</body>
+</html>
