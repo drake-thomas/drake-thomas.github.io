@@ -27,6 +27,7 @@
   .chip { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 999px; color: #111; background: #ccc; white-space: nowrap; }
   .c-yes, .c-merge { background: var(--yes); } .c-no, .c-auto { background: var(--no); } .c-maybe { background: var(--maybe); } .c-fix { background: var(--fix); }
   .c-auto { opacity: .6; }
+  .c-feat { background: #4da3ff; }
   #foot { border-top: 1px solid var(--line); padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); display: grid; gap: 7px; }
   #verdicts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
   #verdicts button { padding: 9px 2px; font-size: 13.5px; font-weight: 700; border-width: 2px; }
@@ -71,7 +72,7 @@
 </head>
 <body class="fullbleed">
 <div id="mapWrap"><div id="map"></div><canvas id="cv"></canvas></div>
-<div id="legend" class="panel muted"><i style="border-color:#fff"></i>unreviewed<i style="border-color:var(--yes)"></i>yes<i style="border-color:var(--no)"></i>no<i style="border-color:var(--maybe)"></i>maybe<i style="border-color:var(--fix)"></i>fix<i style="border-color:#aaa;border-style:dashed"></i>already a feature<i style="border-color:var(--sel)"></i>selected</div>
+<div id="legend" class="panel muted"><i style="border-color:#fff"></i>unreviewed<i style="border-color:var(--yes)"></i>yes<i style="border-color:var(--no)"></i>no<i style="border-color:var(--maybe)"></i>maybe<i style="border-color:var(--fix)"></i>fix<i style="border-color:#4da3ff;background:rgba(77,163,255,.25)"></i>existing feature<i style="border-color:var(--sel)"></i>selected</div>
 <div id="status" class="panel muted">Loading…</div>
 <div id="zbtns"><button id="zIn" title="Zoom in (=)">+</button><button id="zOut" title="Zoom out (-)">−</button></div>
 <div id="mode" class="panel" hidden></div>
@@ -82,14 +83,14 @@
     <div class="row"><b class="grow">Protected areas · board</b><a class="small" href="index.html" style="color:#9fd8ff">gavel ›</a></div>
     <div class="row">
       <label title="Dim blobs you've already decided (E toggles existing features)"><input id="fDone" type="checkbox"> hide decided</label>
-      <label title="Draw existing protected / forest-park features (grey dashed)"><input id="fFeat" type="checkbox" checked> features</label>
+      <label title="Draw existing protected / forest-park / wetland features (blue; E)"><input id="fFeat" type="checkbox" checked> features</label>
       <label title="Show paper/umbrella designations (biosphere reserves, Ramsar, transfrontier…) as dotted outlines"><input id="fUmb" type="checkbox" checked> umbrella</label>
       <label title="Map labels (L)"><input id="fLabels" type="checkbox"> labels</label>
     </div>
   </div>
   <div id="body">
     <div class="row"><span id="selHead" class="grow">Nothing selected</span><button id="blobBtn" class="linkish small" title="Expand the selection to whole blobs (B)">whole blobs</button><button id="zoomSel" class="linkish small" title="Zoom to the selection (Z)">zoom</button></div>
-    <div id="selList" class="small muted">Click an outline to select it; Shift-click (or A mode) adds/removes; click a selected member again for its whole blob.</div>
+    <div id="selList" class="small muted">Click selects the existing feature (blue) or whole blob under the cursor; click again steps to the next (blob, then the single member). Shift-click (or A mode) adds/removes one member (or a feature); Alt+Shift-click adds/removes the whole group. G merges everything selected, existing features included, into one feature; N on a feature drops it.</div>
     <div><div class="small muted" style="margin-bottom:2px">Recent (undo sends a retraction; pending ones just cancel)</div><div id="recent"></div></div>
   </div>
   <div id="foot">
@@ -110,7 +111,7 @@
     </div>
     <div class="row"><span id="flash" class="small muted grow"></span><button id="retry" class="linkish small" hidden></button></div>
     <div id="who" class="row small"></div>
-    <div id="help" class="muted"><kbd>click</kbd> select member · again = whole blob · <kbd>⇧</kbd>/<kbd>A</kbd> add/remove · <kbd>Alt</kbd>-click whole blob · <kbd>B</kbd> whole blobs ·
+    <div id="help" class="muted"><kbd>click</kbd> feature / blob, again = next (blob, member) · <kbd>⇧</kbd>/<kbd>A</kbd> add/remove member · <kbd>Alt</kbd><kbd>⇧</kbd> add/remove group · <kbd>B</kbd> whole blobs ·
       <kbd>Y</kbd><kbd>N</kbd><kbd>M</kbd> verdict (one item per blob) · <kbd>G</kbd> merge+yes · <kbd>F</kbd> redraw · <kbd>I</kbd>/<kbd>O</kbd> ± points (click a point to remove) ·
       <kbd>/</kbd> note, <kbd>Enter</kbd> sends · <kbd>Esc</kbd> clear · <kbd>⌘Z</kbd> undo · <kbd>Z</kbd> zoom to selection · <kbd>H</kbd> hold to hide outlines · <kbd>E</kbd> features · <kbd>L</kbd> labels
       <div id="stats" class="small"></div></div>
@@ -121,7 +122,7 @@
 import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { FB_NAME, FB_OWNER, lsGet, lsSet, fbPost, fbQueue, fbSave } from '../../lib/feedback.js';
 import { openPolyEdit, activeEditor } from '../../lib/polyedit.js';
-import { wx, wy, lngOf, latOf, shapeOf, geoShape, bbOf, dp, unionOutline, toGeoJSON, orderMembers, memberSetId, MAX_MEMBERS } from '../../lib/reviewsel.js';
+import { wx, wy, lngOf, latOf, shapeOf, geoShape, bbOf, dp, unionOutline, toGeoJSON, orderMembers, memberSetId, hash6, MAX_MEMBERS } from '../../lib/reviewsel.js';
 
 // Map-wide review board for the protected-area queue (apps/review/index.html is the one-blob-at-a-time gavel).
 // Everything is drawn on one canvas over the Google map (thousands of outlines; Maps Polygons would crawl): world (Web
@@ -133,6 +134,7 @@ const VKEY = `geolab.review.${QUEUE}`, BKEY = `geolab.review.${QUEUE}.board`, UK
 const SEND_DELAY = 6000;
 const COL = { none: '#ffffff', yes: '#5ad17a', no: '#ff6b6b', maybe: '#f0b84a', fix: '#c58cff', auto: '#ff6b6b' };
 const FILL = { none: .05, yes: .3, no: .25, maybe: .26, fix: .3, auto: .08 };
+const FEAT_COL = '#4da3ff';
 const KEYV = { y: 'yes', n: 'no', m: 'maybe', g: 'merge', f: 'fix' };
 const vc = v => v === 'merge' ? 'yes' : v;
 const $ = id => document.getElementById(id);
@@ -148,7 +150,7 @@ const R = {};                       // region -> {bb, state}
 const qById = new Map();            // queue index rows
 const blobById = new Map(), memberByRef = new Map(), allMembers = [], allBlobs = [];
 let feats = [], prefilter = {}, serverItems = [], qmeta = {}, builtISO = '';
-let sel = [], hover = null, hoverFeat = null, mode = null, addMode = false, armed = null, pendingFix = null;
+let sel = [], selF = [], hoverT = null, featById = new Map(), fstatus = new Map(), hover = null, hoverFeat = null, mode = null, addMode = false, armed = null, pendingFix = null;
 let inPts = [], outPts = [], overlayOn = true, status = new Map();
 let actions = lsJSON(BKEY, []);
 const ui = Object.assign({ done: false, feat: true, umb: false, labels: false }, lsJSON(UKEY, {}));
@@ -213,7 +215,8 @@ async function loadFeatures() {
     feats = d.features.filter(f => f.geometry && /Polygon/.test(f.geometry.type)
       && (['forest-park', 'wetland'].includes(f.category) || /^protected/.test(f.src || '')))
       .map(f => ({ id: f.id, name: f.name, src: f.src, category: f.category, ...geoShape(f.geometry) }));
-    scheduleDraw();
+    for (const f of feats) { f.area = ringArea(f); featById.set(f.id, f); }
+    scheduleDraw(); renderSel();
   } catch (e) { console.warn('features', e); }
 }
 async function loadServer() {  // verdicts already on disk (local dev server; on the site this 404s and we rely on localStorage)
@@ -224,6 +227,13 @@ async function loadServer() {  // verdicts already on disk (local dev server; on
     rebuildStatus(); scheduleDraw(); renderSel();
   } catch {}
 }
+
+function ringArea(sh) {  // world-unit area of the outer rings (only for ordering features by size)
+  let A = 0;
+  sh.rings.forEach((a, k) => { if (!sh.outer[k]) return; let s = 0; for (let i = 0, j = a.length - 2; i < a.length; j = i, i += 2) s += a[j] * a[i + 1] - a[i] * a[j + 1]; A += Math.abs(s) / 2; });
+  return A;
+}
+const fKm2 = f => f.area * (40075 / 256) ** 2 * Math.cos(latOf((f.bb[1] + f.bb[3]) / 2) / 57.2958) ** 2;
 
 // ---------- verdict status per member ----------
 function refsOfItem(it) {
@@ -251,7 +261,7 @@ function rebuildStatus() {
   };
   for (const it of live) {
     const m = remap(it.candidate_id, it.ts, it.members); if (!m) continue;
-    ev.push({ ts: it.ts || it.received || '', v: it.verdict, refs: refsOfItem({ ...it, candidate_id: m.cid }), note: (m.piece ? '[before regrouping, on a smaller piece] ' : '') + (it.note || ''), src: 'sent' });
+    ev.push({ ts: it.ts || it.received || '', v: it.verdict, refs: it.existing?.length && !it.members?.length ? [] : refsOfItem({ ...it, candidate_id: m.cid }), fids: it.existing, note: (m.piece ? '[before regrouping, on a smaller piece] ' : '') + (it.note || ''), src: 'sent' });
   }
   const gv = lsJSON(VKEY, {});
   for (const [bid, x] of Object.entries(gv)) {
@@ -260,11 +270,15 @@ function rebuildStatus() {
     ev.push({ ts: x.ts || '', v: x.v, refs: refsOfItem({ candidate_id: m.cid }), note: (m.piece ? '[before regrouping, on a smaller piece] ' : '') + (x.note || ''), src: x.board ? 'board' : 'gavel' });
   }
   for (const a of actions) if (a.state !== 'cancelled' && a.state !== 'retracted')
-    for (const it of a.items) ev.push({ ts: it.ts, v: it.verdict, refs: it.members, note: it.note, src: 'board' });
+    for (const it of a.items) ev.push({ ts: it.ts, v: it.verdict, refs: it.members, fids: it.existing, note: it.note, src: 'board' });
   ev.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   status = new Map();
   for (const [bid, x] of Object.entries(prefilter)) if (x?.auto === 'no') for (const r of refsOfItem({ candidate_id: bid })) status.set(r, { v: 'auto', note: x.reason, src: 'prefilter' });
-  for (const e of ev) if (['yes', 'no', 'maybe', 'fix', 'merge'].includes(e.v)) for (const r of e.refs || []) status.set(r, e);
+  fstatus = new Map();
+  for (const e of ev) if (['yes', 'no', 'maybe', 'fix', 'merge'].includes(e.v)) {
+    for (const r of e.refs || []) status.set(r, e);
+    for (const f of e.fids || []) fstatus.set(f, e);  // existing features: no = drop, merge/fix = changed
+  }
 }
 const stOf = M => vc(status.get(M.ref)?.v) || 'none';
 function blobSt(B) { const s = stOf(B.members[0]); return B.members.every(m => stOf(m) === s) ? s : 'none'; }
@@ -297,13 +311,19 @@ function draw() {
   const minPx = 2.5 / s;
   let nv = 0, nOut = 0, nDots = 0;
   ctx.lineJoin = 'round';
-  // existing features: grey dashed
+  // existing features: solid blue outline, faint blue fill (owner: "hard to tell what's what"); a board verdict on one
+  // recolours it dashed (red = dropped, green = merged, purple = redrawn, amber = maybe)
   if (ui.feat && feats.length) {
-    ctx.beginPath();
-    for (const f of feats) if (inView(f) && (f.bb[2] - f.bb[0] > minPx || f.bb[3] - f.bb[1] > minPx)) { nv += addRings(lod(f, z), s, ox, oy); nOut++; }
-    ctx.fillStyle = 'rgba(200,200,200,.10)'; ctx.fill();
-    ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+    const fg = {};
+    for (const f of feats) if (inView(f) && (f.bb[2] - f.bb[0] > minPx || f.bb[3] - f.bb[1] > minPx)) (fg[vc(fstatus.get(f.id)?.v) || 'feat'] ||= []).push(f);
+    for (const k in fg) {
+      ctx.beginPath(); for (const f of fg[k]) nv += addRings(lod(f, z), s, ox, oy); nOut += fg[k].length;
+      const col = k === 'feat' ? FEAT_COL : COL[k];
+      ctx.globalAlpha = k === 'feat' ? .13 : .1; ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1;
+      if (k !== 'feat') ctx.setLineDash([7, 4]);
+      ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3.5; ctx.stroke();
+      ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.stroke(); ctx.setLineDash([]);
+    }
   }
   // members grouped by status; tiny ones as dots
   const selSet = new Set(sel), groups = {}, dots = {}, umbs = [];
@@ -346,6 +366,11 @@ function draw() {
     ctx.globalAlpha = 1;
   }
   // selection + hover on top
+  if (selF.length) {  // selected existing features: stronger blue fill, cyan outline
+    ctx.beginPath(); for (const id of selF) { const f = featById.get(id); if (f && inView(f)) nv += addRings(lod(f, z), s, ox, oy); }
+    ctx.fillStyle = 'rgba(77,163,255,.35)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 5; ctx.stroke(); ctx.strokeStyle = '#4fe3ff'; ctx.lineWidth = 2.6; ctx.stroke();
+  }
   if (sel.length) {
     ctx.beginPath();
     for (const r of sel) { const M = memberByRef.get(r); if (M && inView(M)) nv += addRings(lod(M, z), s, ox, oy); }
@@ -353,11 +378,16 @@ function draw() {
     ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 4.5; ctx.stroke();
     ctx.strokeStyle = '#4fe3ff'; ctx.lineWidth = 2.2; ctx.stroke();
   }
-  if (hover) {
-    ctx.beginPath(); addRings(lod(hover, z), s, ox, oy);
-    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 4.5; ctx.stroke(); ctx.strokeStyle = '#ffe27a'; ctx.lineWidth = 2.2; ctx.stroke();
-  } else if (hoverFeat) {
-    ctx.beginPath(); addRings(lod(hoverFeat, z), s, ox, oy); ctx.strokeStyle = '#eee'; ctx.lineWidth = 2; ctx.stroke();
+  // hover: what a click would select (yellow), and the member under the cursor (thin yellow) when that's a bigger group
+  const hs = hoverT ? (hoverT.kind === 'feat' ? [featById.get(hoverT.ids[0])] : hoverT.kind === 'blob' ? [memberByRef.get(hoverT.refs[0])?.blob] : [memberByRef.get(hoverT.refs[0])]).filter(Boolean)
+    : hover ? [hover] : [];
+  if (hs.length) {
+    ctx.beginPath(); for (const h of hs) addRings(lod(h, z), s, ox, oy);
+    if (hoverT?.kind === 'feat') { ctx.fillStyle = 'rgba(77,163,255,.18)'; ctx.fill(); }
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 5; ctx.stroke(); ctx.strokeStyle = '#ffe27a'; ctx.lineWidth = 2.6; ctx.stroke();
+  }
+  if (hover && hoverT && hoverT.kind !== 'mem') {
+    ctx.beginPath(); addRings(lod(hover, z), s, ox, oy); ctx.setLineDash([4, 3]); ctx.strokeStyle = '#ffe27a'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
   }
   // include / exclude points
   for (const [pts, col, sym] of [[inPts, COL.yes, '+'], [outPts, COL.no, '−']]) for (const [lat, lng] of pts) {
@@ -389,12 +419,23 @@ function hitAt(lat, lng) {
   }
   return best;
 }
-function featAt(lat, lng) {
+function featAt(lat, lng) {  // smallest existing feature containing the point
   if (!ui.feat) return null;
-  const x = wx(lng), y = wy(lat);
-  for (const f of feats) { const b = f.bb; if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && pip(f, x, y)) return f; }
-  return null;
+  const x = wx(lng), y = wy(lat); let best = null;
+  for (const f of feats) { const b = f.bb; if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && (!best || f.area < best.area) && pip(f, x, y)) best = f; }
+  return best;
 }
+// what a plain click can select at a point, in click order: the existing feature, the whole blob, the member under the cursor
+function targetsAt(lat, lng) {
+  const M = hitAt(lat, lng), F = featAt(lat, lng), t = [];
+  if (F) t.push({ kind: 'feat', ids: [F.id], label: `existing feature ${F.name}` });
+  if (M && M.blob.members.length > 1) t.push({ kind: 'blob', refs: M.blob.members.map(m => m.ref), label: `whole blob ${M.blob.name} (${M.blob.members.length})` });
+  if (M) t.push({ kind: 'mem', refs: [M.ref], label: M.name });
+  return { M, F, t };
+}
+const isSel = t => t.kind === 'feat' ? !sel.length && selF.length === 1 && selF[0] === t.ids[0]
+  : !selF.length && sel.length === t.refs.length && t.refs.every(r => sel.includes(r));
+const nextTarget = t => { const i = t.findIndex(isSel); return t.length ? t[(i + 1) % t.length] : null; };
 function tipHtml(M) {
   const st = status.get(M.ref), B = M.blob;
   const sc = M.gscore != null ? `${fmtScore(M.score)} / G ${fmtScore(M.gscore)}` : fmtScore(M.score);
@@ -409,21 +450,25 @@ function onMove(e) {
   if (moveQueued) return; moveQueued = true;
   requestAnimationFrame(() => {
     moveQueued = false; const e = lastMove; if (!e?.latLng || activeEditor()) return;
-    const M = hitAt(e.latLng.lat(), e.latLng.lng()), F = M ? null : featAt(e.latLng.lat(), e.latLng.lng());
-    if (M !== hover || F !== hoverFeat) { hover = M; hoverFeat = F; scheduleDraw(); }
+    const { M, F, t } = targetsAt(e.latLng.lat(), e.latLng.lng()), nt = mode ? null : nextTarget(t);
+    if (M !== hover || F !== hoverFeat || JSON.stringify(nt) !== JSON.stringify(hoverT)) { hover = M; hoverFeat = F; hoverT = nt; scheduleDraw(); }
     const tip = $('tip'), de = e.domEvent;
     if ((M || F) && de?.clientX != null) {
-      tip.innerHTML = M ? tipHtml(M) : `<b>${esc(F.name)}</b><br><span class="sub">already a feature · ${esc(F.category)} · ${esc(F.src || '')}</span>`;
+      const fst = F && fstatus.get(F.id);
+      tip.innerHTML = (F ? `<b>${esc(F.name)}</b> <span class="chip c-feat">existing feature</span>${fst ? ` <span class="chip c-${esc(fst.v)}">${esc(fst.v)}</span>` : ''}<br><span class="sub">${esc(F.category)} · ${fmtArea(fKm2(F))} · ${esc(F.src || '')}</span>${M ? '<hr style="border:0;border-top:1px solid #333;margin:4px 0">' : ''}` : '')
+        + (M ? tipHtml(M) : '') + (nt ? `<br><span class="sub">click: <b style="color:#ffe27a">${esc(nt.label)}</b>${t.length > 1 ? ' · click again: next' : ''} · ⇧-click: add/remove ${M ? 'this member' : 'this feature'}</span>` : '');
       tip.hidden = false;
       const x = Math.min(de.clientX, innerWidth - tip.offsetWidth - 30);
       tip.style.left = x + 'px'; tip.style.top = de.clientY + 'px';
     } else tip.hidden = true;
-    map.setOptions({ draggableCursor: mode ? 'crosshair' : M ? 'pointer' : null });
+    map.setOptions({ draggableCursor: mode ? 'crosshair' : M || F ? 'pointer' : null });
   });
 }
 
 // ---------- selection ----------
-function setSel(refs) { sel = [...new Set(refs)].filter(r => memberByRef.has(r)); renderSel(); scheduleDraw(); }
+function setSel(refs, fids = null) { sel = [...new Set(refs)].filter(r => memberByRef.has(r)); if (fids) selF = [...new Set(fids)].filter(f => featById.has(f)); renderSel(); scheduleDraw(); }
+function toggleF(id) { selF = selF.includes(id) ? selF.filter(f => f !== id) : [...selF, id]; renderSel(); scheduleDraw(); }
+const selectTarget = t => t.kind === 'feat' ? setSel([], t.ids) : setSel(t.refs, []);
 function toggle(ref) { setSel(sel.includes(ref) ? sel.filter(r => r !== ref) : [...sel, ref]); }
 const blobsOf = refs => [...new Set(refs.map(r => memberByRef.get(r)?.blob).filter(Boolean))];
 function onClick(e) {
@@ -434,26 +479,38 @@ function onClick(e) {
     for (const arr of [inPts, outPts]) { const k = arr.findIndex(near); if (k >= 0) { arr.splice(k, 1); renderPts(); scheduleDraw(); return; } }
     (mode === 'in' ? inPts : outPts).push([lat, lng]); renderPts(); scheduleDraw(); return;
   }
-  const M = hitAt(lat, lng);
-  if (!M) { if (!de.shiftKey && !addMode) setSel([]); return; }
-  const whole = M.blob.members.map(m => m.ref);
-  if (de.altKey) setSel(de.shiftKey || addMode ? [...sel, ...whole] : whole);
-  else if (de.shiftKey || addMode) toggle(M.ref);
-  else if (sel.length === 1 && sel[0] === M.ref && whole.length > 1) setSel(whole);  // second click: the whole blob
-  else setSel([M.ref]);
+  // plain click: the existing feature here, then (click again) the whole blob, then the member; Shift (or A mode): add/remove the
+  // member under the cursor (the feature where there is no candidate); Alt+Shift: add/remove the whole group (feature or blob)
+  const { M, F, t } = targetsAt(lat, lng);
+  if (!t.length) { if (!de.shiftKey && !addMode) setSel([], []); return; }
+  const add = de.shiftKey || addMode;
+  if (add && de.altKey) {
+    const g = t[0];
+    if (g.kind === 'feat') toggleF(g.ids[0]);
+    else { const all = g.refs.every(r => sel.includes(r)); setSel(all ? sel.filter(r => !g.refs.includes(r)) : [...sel, ...g.refs]); }
+  } else if (add) { if (M) toggle(M.ref); else toggleF(F.id); }
+  else if (de.altKey) selectTarget(t[0]);
+  else selectTarget(nextTarget(t));
+  hoverT = nextTarget(t); scheduleDraw();
 }
 const primaryOrder = refs => orderMembers(refs.map(r => memberByRef.get(r)).filter(Boolean)).map(m => m.ref);
-function unionGeometry(refs) {  // the blob's own outline when the selection is exactly one whole blob, else a raster union
-  const ms = refs.map(r => memberByRef.get(r)).filter(Boolean), bl = blobsOf(refs);
-  return bl.length === 1 && bl[0].members.length === ms.length ? toGeoJSON(bl[0]) : unionOutline(ms);
+function unionGeometry(refs, fids = []) {  // one whole blob / one feature: its own outline; else a raster union of everything
+  const ms = refs.map(r => memberByRef.get(r)).filter(Boolean), bl = blobsOf(refs), fs = fids.map(f => featById.get(f)).filter(Boolean);
+  if (!fs.length && bl.length === 1 && bl[0].members.length === ms.length) return toGeoJSON(bl[0]);
+  return unionOutline([...fs, ...ms]);
 }
 function renderSel() {
-  const ms = sel.map(r => memberByRef.get(r)).filter(Boolean);
-  if (!ms.length) { $('selHead').textContent = 'Nothing selected'; $('selList').innerHTML = $('selList').dataset.help || ($('selList').dataset.help = $('selList').innerHTML); return; }
+  const ms = sel.map(r => memberByRef.get(r)).filter(Boolean), fs = selF.map(f => featById.get(f)).filter(Boolean);
+  if (!ms.length && !fs.length) { $('selHead').textContent = 'Nothing selected'; $('selList').innerHTML = $('selList').dataset.help || ($('selList').dataset.help = $('selList').innerHTML); return; }
   const bl = blobsOf(sel), km = ms.reduce((s, m) => s + (m.km2 || 0), 0);
   const wholeN = bl.filter(B => B.members.every(m => sel.includes(m.ref))).length;
-  $('selHead').innerHTML = `${ms.length} member${ms.length > 1 ? 's' : ''} · ${fmtArea(km)} <span class="small muted">(${bl.length} blob${bl.length > 1 ? 's' : ''}${wholeN ? `, ${wholeN} whole` : ''})</span>`;
-  $('selList').innerHTML = primaryOrder(sel).slice(0, 250).map(r => {
+  const fkm = fs.reduce((s, f) => s + fKm2(f), 0);
+  $('selHead').innerHTML = [fs.length ? `${fs.length} existing feature${fs.length > 1 ? 's' : ''}` : '', ms.length ? `${ms.length} member${ms.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + ')
+    + ` · ${fmtArea(km + fkm)}${ms.length ? ` <span class="small muted">(${bl.length} blob${bl.length > 1 ? 's' : ''}${wholeN ? `, ${wholeN} whole` : ''})</span>` : ''}`;
+  $('selList').innerHTML = fs.map(f => { const st = fstatus.get(f.id);
+    return `<div class="mem" data-fid="${esc(f.id)}"><span class="nm">${esc(f.name)}<span class="sub">existing feature · ${esc(f.category)} · ≈${fmtArea(fKm2(f))} · ${esc(f.src || '')}</span></span>
+      <span class="chip c-feat">feature</span>${st ? `<span class="chip c-${esc(st.v)}">${esc(st.v)}</span>` : ''}<button class="linkish x" data-rmf="${esc(f.id)}" title="Remove from selection">×</button></div>`; }).join('')
+    + primaryOrder(sel).slice(0, 250).map(r => {
     const m = memberByRef.get(r), st = status.get(r);
     return `<div class="mem" data-ref="${esc(r)}"><span class="nm">${esc(m.name)}<span class="sub">${esc(m.desig)} · ${fmtArea(m.km2)} · ${fmtScore(m.score)}${m.blob.members.length > 1 ? ` · in ${esc(m.blob.name)}` : ''}</span></span>
       ${st ? `<span class="chip c-${esc(st.v)}">${esc(st.v === 'auto' ? 'auto-no' : st.v)}</span>` : ''}<button class="linkish x" data-rm="${esc(r)}" title="Remove from selection">×</button></div>`;
@@ -461,16 +518,17 @@ function renderSel() {
 }
 $('selList').addEventListener('click', e => {
   const rm = e.target.closest('[data-rm]'); if (rm) { toggle(rm.dataset.rm); return; }
-  const el = e.target.closest('.mem'); if (el) zoomTo([el.dataset.ref]);
+  const rf = e.target.closest('[data-rmf]'); if (rf) { toggleF(rf.dataset.rmf); return; }
+  const el = e.target.closest('.mem'); if (el) el.dataset.fid ? zoomTo([], [el.dataset.fid]) : zoomTo([el.dataset.ref]);
 });
 $('selList').addEventListener('mouseover', e => { const el = e.target.closest('.mem'); const M = el && memberByRef.get(el.dataset.ref); if (M !== hover) { hover = M || null; scheduleDraw(); } });
-function zoomTo(refs) {
-  const ms = refs.map(r => memberByRef.get(r)).filter(Boolean); if (!ms.length) return;
+function zoomTo(refs, fids = []) {
+  const ms = [...refs.map(r => memberByRef.get(r)), ...fids.map(f => featById.get(f))].filter(Boolean); if (!ms.length) return;
   const x0 = Math.min(...ms.map(m => m.bb[0])), y0 = Math.min(...ms.map(m => m.bb[1])), x1 = Math.max(...ms.map(m => m.bb[2])), y1 = Math.max(...ms.map(m => m.bb[3]));
   map.fitBounds({ west: lngOf(x0), east: lngOf(x1), north: latOf(y0), south: latOf(y1) }, 60);
 }
 $('blobBtn').onclick = () => setSel(blobsOf(sel).flatMap(B => B.members.map(m => m.ref)));
-$('zoomSel').onclick = () => zoomTo(sel);
+$('zoomSel').onclick = () => zoomTo(sel, selF);
 
 // ---------- points / modes ----------
 function setMode(m) { mode = mode === m ? null : m; renderMode(); }
@@ -492,6 +550,14 @@ function flash(msg, err) { $('flash').textContent = msg; $('flash').classList.to
 function setArmed(v) { armed = v; for (const b of document.querySelectorAll('#verdicts button')) b.classList.toggle('armed', b.dataset.v === v); }
 function makeItem(verdict, refs, extra = {}) {
   refs = primaryOrder(refs);
+  const fids = [...(extra.existing || [])].sort((a, b) => featById.get(b).area - featById.get(a).area);
+  if (fids.length) {  // existing features involved: "pf:<largest feature>[+<n-1>~<hash of everything>]"
+    extra = { ...extra, existing: fids };
+    const n = fids.length + refs.length, F0 = featById.get(fids[0]);
+    const cid = `pf:${fids[0]}` + (n > 1 ? `+${n - 1}~${hash6([...fids, ...refs].sort().join(','))}` : '');
+    return { type: 'review', queue: QUEUE, candidate_id: cid, candidate_name: n > 1 ? `${F0.name} +${n - 1}` : F0.name, verdict, members: refs,
+      note: $('note').value.trim(), ts: new Date().toISOString(), view: viewNow(), ...extra };
+  }
   const M0 = memberByRef.get(refs[0]), bl = blobsOf(refs);
   const single = bl.length === 1 && bl[0].members.length === refs.length;
   const cid = single ? bl[0].id : memberSetId(refs);
@@ -502,12 +568,13 @@ function makeItem(verdict, refs, extra = {}) {
 const viewNow = () => { const c = map.getCenter(); return { lat: +c.lat().toFixed(4), lng: +c.lng().toFixed(4), z: map.getZoom() }; };
 function verdict(v) {
   if (activeEditor()) return;
-  if (!sel.length) { flash('Select something first (click an outline)', true); return; }
+  if (!sel.length && !selF.length) { flash('Select something first (click an outline)', true); return; }
   if (v === 'fix' && !pendingFix) return fixEdit();
+  if (selF.length > 50) { flash('Too many existing features (> 50)', true); return; }
   let items;
-  if (v === 'merge' || v === 'fix') {  // one item over everything selected
+  if (v === 'merge' || v === 'fix') {  // one item over everything selected (existing features + members -> one feature)
     if (sel.length > MAX_MEMBERS) { flash(`Too many members (${sel.length} > ${MAX_MEMBERS}) for one block`, true); return; }
-    const extra = { include: inPts, exclude: outPts };
+    const extra = { include: inPts, exclude: outPts, ...(selF.length ? { existing: selF } : {}) };
     if (v === 'merge' && $('mname').value.trim()) extra.feature_name = $('mname').value.trim();
     if (v === 'fix' && pendingFix?.g) Object.assign(extra, { geometry: pendingFix.g, geom_meta: pendingFix.meta });
     items = [makeItem(v, sel, extra)];
@@ -515,26 +582,30 @@ function verdict(v) {
     const groups = new Map();
     for (const r of sel) { const B = memberByRef.get(r).blob; if (!groups.has(B)) groups.set(B, []); groups.get(B).push(r); }
     const allIn = [...inPts], allOut = [...outPts];
+    if (selF.length && v === 'yes' && !sel.length) { flash('Existing features are already in: G merges them, N drops one, F redraws', true); return; }
     items = [...groups.values()].map((g, k) => {
       const inc = groups.size === 1 ? allIn : allIn.filter(p => g.some(r => pip(memberByRef.get(r), wx(p[1]), wy(p[0])))),
         exc = groups.size === 1 ? allOut : allOut.filter(p => g.some(r => { const b = memberByRef.get(r).bb, x = wx(p[1]), y = wy(p[0]); return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]; }));
       return makeItem(v, g, { include: inc, exclude: exc });
     });
+    // N on existing features = drop them; M = flag them; (Y leaves them as they are)
+    if (selF.length && v !== 'yes') items.push(makeItem(v, [], { existing: selF }));
+    else if (selF.length) flash('Yes went to the candidate members; the existing features are unchanged (G merges them)');
   }
-  const label = `${v} · ${items.length > 1 ? `${items.length} blobs (${sel.length} members)` : items[0].candidate_name}`;
+  const label = `${v} · ${items.length > 1 ? `${items.length} items (${sel.length} members${selF.length ? `, ${selF.length} features` : ''})` : items[0].candidate_name}`;
   commit(label, items);
 }
 function commit(label, items) {
   const a = { aid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), label, items,
-    state: 'pending', due: Date.now() + SEND_DELAY, prevSel: [...sel], prevPts: [inPts, outPts], prevNote: $('note').value };
+    state: 'pending', due: Date.now() + SEND_DELAY, prevSel: [...sel], prevSelF: [...selF], prevPts: [inPts, outPts], prevNote: $('note').value };
   actions.push(a); if (actions.length > 400) actions = actions.slice(-400);
   saveActions(); markGavel(a, true);
-  setSel([]); inPts = []; outPts = []; renderPts(); $('note').value = ''; $('mname').value = ''; $('note').blur(); setArmed(null); pendingFix = null;
+  setSel([], []); inPts = []; outPts = []; renderPts(); $('note').value = ''; $('mname').value = ''; $('note').blur(); setArmed(null); pendingFix = null;
   mode = null; renderMode();
   rebuildStatus(); scheduleDraw(); renderRecent();
   flash(`${label}: sending in ${SEND_DELAY / 1000}s (⌘Z undoes)`);
 }
-const saveActions = () => lsPut(BKEY, actions.map(a => ({ ...a, prevSel: a.state === 'pending' ? a.prevSel : undefined, prevPts: undefined })));
+const saveActions = () => lsPut(BKEY, actions.map(a => ({ ...a, prevSel: a.state === 'pending' ? a.prevSel : undefined, prevSelF: a.state === 'pending' ? a.prevSelF : undefined, prevPts: undefined })));
 function markGavel(a, on) {  // mirror whole-blob verdicts into the gavel's store so it skips (or un-skips) them
   const gv = lsJSON(VKEY, {});
   for (const it of a.items) {
@@ -562,7 +633,7 @@ function undo(a) {
   if (!a) { flash('Nothing to undo'); return; }
   markGavel(a, false);
   if (a.state === 'pending') {
-    a.state = 'cancelled'; setSel(a.prevSel || []);
+    a.state = 'cancelled'; setSel(a.prevSel || [], a.prevSelF || []);
     if (a.prevPts) { [inPts, outPts] = a.prevPts; renderPts(); }
     if (a.prevNote) $('note').value = a.prevNote;
     flash(`Cancelled (never sent): ${a.label}`);
@@ -573,7 +644,7 @@ function undo(a) {
     a.state = 'retracted';
     for (const it of a.items.filter(it => !queued.has(key(it)))) {
       const r = { type: 'review', queue: QUEUE, verdict: 'retract', candidate_id: it.candidate_id, candidate_name: it.candidate_name,
-        members: it.members, retracts: it.ts, note: 'undo', ts: new Date().toISOString() };
+        members: it.members, ...(it.existing ? { existing: it.existing } : {}), retracts: it.ts, note: 'undo', ts: new Date().toISOString() };
       fbPost(r).then(res => { if (res !== 'ok') { const q2 = fbQueue(); q2.push(r); fbSave(q2); refreshRetry(); } else loadServer(); });
     }
     flash(`Retracted: ${a.label}`);
@@ -615,16 +686,17 @@ for (const b of document.querySelectorAll('#verdicts button')) b.onclick = () =>
 
 // ---------- fix: union outline -> polygon editor ----------
 function fixEdit() {
-  if (!sel.length) { flash('Select something first', true); return; }
+  if (!sel.length && !selF.length) { flash('Select something first', true); return; }
   if (sel.length > MAX_MEMBERS) { flash(`Too many members (${sel.length} > ${MAX_MEMBERS})`, true); return; }
-  const refs = [...sel], t0 = performance.now(), g = pendingFix?.refs === refs.join() && pendingFix.g ? pendingFix.g : unionGeometry(refs);
+  const refs = [...sel], fids = [...selF], key = [...fids, ...refs].join(), t0 = performance.now();
+  const g = pendingFix?.refs === key && pendingFix.g ? pendingFix.g : unionGeometry(refs, fids);
   stats.unionMs = +(performance.now() - t0).toFixed(1);
   if (!g) { flash('Could not build an outline', true); return; }
   const prevOverlay = overlayOn; setOverlay(false); $('tip').hidden = true;
-  const M0 = memberByRef.get(primaryOrder(refs)[0]);
-  openPolyEdit(map, { geometry: g, title: refs.length > 1 ? `${M0.name} +${refs.length - 1}` : M0.name, doneLabel: 'Done → fix',
+  const n0 = (fids.length ? featById.get(fids[0]) : memberByRef.get(primaryOrder(refs)[0])).name, n = refs.length + fids.length;
+  openPolyEdit(map, { geometry: g, title: n > 1 ? `${n0} +${n - 1}` : n0, doneLabel: 'Done → fix',
     onDone: (ge, meta) => {
-      pendingFix = { refs: refs.join(), g: ge || null, meta };
+      pendingFix = { refs: key, g: ge || null, meta };
       setArmed('fix'); $('note').focus();
       flash(ge ? `Edited outline attached (${meta.vertices} vertices): Enter sends "fix"` : 'No changes: Enter sends "fix" without an outline');
     },
@@ -660,13 +732,13 @@ addEventListener('keydown', e => {
   else if (k === 'o') setMode('out');
   else if (k === 'a') setAdd(!addMode);
   else if (k === 'b') $('blobBtn').onclick();
-  else if (k === 'z') zoomTo(sel);
+  else if (k === 'z') zoomTo(sel, selF);
   else if (k === 'e') { ui.feat = !ui.feat; $('fFeat').checked = ui.feat; saveUI(); scheduleDraw(); }
   else if (k === 'l') setLabels(!ui.labels);
   else if (k === 'h') { if (!e.repeat) setOverlay(false); }
   else if (e.key === 'Escape') {
     if (mode) { mode = null; renderMode(); } else if (addMode) setAdd(false);
-    else { setSel([]); inPts = []; outPts = []; renderPts(); setArmed(null); pendingFix = null; scheduleDraw(); }
+    else { setSel([], []); inPts = []; outPts = []; renderPts(); setArmed(null); pendingFix = null; scheduleDraw(); }
   }
   else if (e.key === '/' || e.key === 'Enter') { e.preventDefault(); $('note').focus(); }
   else if (e.key === '-' || e.key === '_') map.setZoom(map.getZoom() - 1);
@@ -725,7 +797,7 @@ async function main() {
   map.addListener('idle', () => { const c = map.getCenter(); history.replaceState(null, '', `#@${c.lat().toFixed(4)},${c.lng().toFixed(4)},${map.getZoom()}z`); });
   addEventListener('resize', scheduleDraw);
   window.__board = { map, stats, get sel() { return sel; }, setSel, status: () => status, actions: () => actions, verdict, undo, unionGeometry,
-    members: allMembers, memberByRef, blobById, sendPendingNow, setMode, get inPts() { return inPts; }, get outPts() { return outPts; }, hitAt, draw, R, view: () => view,
+    members: allMembers, memberByRef, blobById, feats: () => feats, get selF() { return selF; }, fstatus: () => fstatus, targetsAt, sendPendingNow, setMode, get inPts() { return inPts; }, get outPts() { return outPts; }, hitAt, draw, R, view: () => view,
     screenPt(M) {  // (tests) a screen point inside member M that hit-tests to M, or null
       const b = M.bb; for (let k = 1; k < 600; k++) { const x = b[0] + (b[2] - b[0]) * ((k * 0.6180339) % 1), y = b[1] + (b[3] - b[1]) * ((k * 0.7548776) % 1);
         if (hitAt(latOf(y), lngOf(x)) === M) return [Math.round(x * view.s - view.ox), Math.round(y * view.s - view.oy)]; } return null; } };
