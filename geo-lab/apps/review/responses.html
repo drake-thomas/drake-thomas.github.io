@@ -75,6 +75,7 @@
   <button id="viewBtn" title="Your original view (0)">Your view (0)</button>
   <button id="fitBtn" title="Fit the feature and your marks (F)">Fit (F)</button>
   <button id="labelsBtn" title="Toggle map labels (L)">Labels (L)</button>
+  <button id="overlayBtn" title="Hide/show the outline and your marks, to judge prominence on the bare imagery (O, or hold H)">Overlay (O)</button>
 </div>
 <div id="status" class="panel muted">Loading…</div>
 
@@ -260,6 +261,7 @@ function show(i) {
   for (const b of document.querySelectorAll('#verdicts button')) b.classList.toggle('cur', b.dataset.v === h?.v);
   $('explore').href = explorerUrl(e);
   drawFeature(f); drawOwner(o);
+  if (!overlayOn) shapes.forEach(s => s.setMap(null));
   ownerView(e);
   $('body').scrollTop = 0;
 }
@@ -303,8 +305,13 @@ $('note').addEventListener('keydown', e => {
 });
 
 // ---------- keys / controls ----------
+// O toggles the outline + marks; holding H hides them only while held (judge prominence without distractors)
+let overlayOn = true;
+function setOverlay(on) { overlayOn = on; shapes.forEach(s => s.setMap(on ? map : null)); $('overlayBtn').classList.toggle('on', !on); }
 function toggleLabels() { st.labels = !st.labels; saveState(); map.setMapTypeId(st.labels ? 'hybrid' : 'satellite'); $('labelsBtn').classList.toggle('on', st.labels); }
 $('labelsBtn').onclick = toggleLabels;
+$('overlayBtn').onclick = () => setOverlay(!overlayOn);
+addEventListener('keyup', e => { if ((e.key === 'h' || e.key === 'H') && !overlayOn && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') setOverlay(true); });
 $('viewBtn').onclick = () => list[pos] && ownerView(list[pos]);
 $('fitBtn').onclick = () => list[pos] && fitAll(list[pos]);
 $('prev').onclick = () => show(pos - 1);
@@ -326,6 +333,8 @@ addEventListener('keydown', e => {
   else if (e.key === '/' || e.key === 'Enter') { e.preventDefault(); setArmed('reply'); $('note').focus(); }
   else if (k === 'e') { if ($('explore').href) window.open($('explore').href, '_blank', 'noopener'); }
   else if (k === 'l') toggleLabels();
+  else if (k === 'o') setOverlay(!overlayOn);
+  else if (k === 'h') { if (!e.repeat) setOverlay(false); }
   else if (k === '0') list[pos] && ownerView(list[pos]);
   else if (k === 'f') list[pos] && fitAll(list[pos]);
   else if (e.key === '-' || e.key === '_') map.setZoom(map.getZoom() - 1);
