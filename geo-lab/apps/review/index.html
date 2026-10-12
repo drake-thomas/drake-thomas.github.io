@@ -397,7 +397,7 @@ const onFilter = () => {
   const cur = list[pos]?.id; rebuild(cur); if (list[pos]?.id !== cur) pos = 0; show(pos);
   $('fRegion').blur(); $('fUnrev').blur();
 };
-$('fRegion').onchange = onFilter; $('fUnrev').onchange = onFilter; $('fSort').onchange = () => { $('fSort').blur(); onFilter(); }; $('fMin').onchange = onFilter;
+$('fRegion').onchange = onFilter; $('fUnrev').onchange = onFilter; $('fSort').onchange = () => { $('fSort').blur(); onFilter(); pos = 0; show(0); };  // new order: start from its top $('fMin').onchange = onFilter;
 $('fMin').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('fMin').blur(); } });
 
 // ---------- who ----------
@@ -426,7 +426,9 @@ async function main() {
   window.__review = { map, list: () => list, pos: () => pos, verdicts, index };
   $('status').remove();
   renderWho(); refreshRetry();
-  const want = decodeURIComponent(location.hash.slice(1)) || st.id;
+  // a #blob-id link opens that blob; otherwise start at the top of the current order (with "unreviewed" on that's the
+  // next one to do; resuming at the last-viewed blob put you mid-list after the sort order changed)
+  const want = decodeURIComponent(location.hash.slice(1)) || (st.unrev ? null : st.id);
   rebuild(byId.has(want) ? want : null);
   await show(pos);
   flushQueue();
