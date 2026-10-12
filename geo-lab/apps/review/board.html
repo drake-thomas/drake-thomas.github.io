@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Geo Lab Board</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../../lib/ui.css">
+<script src="../../config.js"></script>
+<style>
+  :root { --side: 360px; --sel: #4fe3ff; --yes: #5ad17a; --no: #ff6b6b; --maybe: #f0b84a; --fix: #c58cff; }
+  #mapWrap { position: fixed; top: 0; left: 0; bottom: 0; right: var(--side); }
+  #map { width: 100%; height: 100%; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  #side { position: fixed; top: 0; right: 0; bottom: 0; width: var(--side); z-index: 10; display: flex; flex-direction: column;
+    background: var(--panel-solid); border-left: 1px solid var(--line); }
+  #head { padding: 10px 12px 8px; border-bottom: 1px solid var(--line); display: grid; gap: 6px; }
+  #head label { font-size: 12.5px; display: inline-flex; gap: 4px; align-items: center; }
+  #body { flex: 1; overflow: auto; padding: 8px 12px; min-height: 0; display: grid; gap: 8px; align-content: start; }
+  #selHead { font-weight: 600; }
+  #selList { display: grid; gap: 2px; }
+  .mem { padding: 4px 7px; border-radius: 7px; cursor: pointer; border: 1px solid transparent; font-size: 12.5px; display: flex; gap: 6px; align-items: baseline; }
+  .mem:hover { background: #232a33; border-color: #35506a; }
+  .mem .nm { font-weight: 600; flex: 1; min-width: 0; }
+  .mem .sub { color: var(--muted); font-size: 11.5px; font-weight: 400; display: block; }
+  .mem .x { opacity: .6; padding: 0 4px; }
+  .chip { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 999px; color: #111; background: #ccc; white-space: nowrap; }
+  .c-yes, .c-merge { background: var(--yes); } .c-no, .c-auto { background: var(--no); } .c-maybe { background: var(--maybe); } .c-fix { background: var(--fix); }
+  .c-auto { opacity: .6; }
+  #foot { border-top: 1px solid var(--line); padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); display: grid; gap: 7px; }
+  #verdicts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+  #verdicts button { padding: 9px 2px; font-size: 13.5px; font-weight: 700; border-width: 2px; }
+  #verdicts button kbd { font-size: 10.5px; margin-left: 2px; opacity: .8; padding: 0 3px; }
+  #vy, #vg { border-color: var(--yes); } #vn { border-color: var(--no); } #vm { border-color: var(--maybe); } #vf { border-color: var(--fix); }
+  #verdicts button.armed { color: #111; outline: 2px solid #fff; outline-offset: 1px; }
+  #vy.armed, #vg.armed { background: var(--yes); } #vn.armed { background: var(--no); } #vm.armed { background: var(--maybe); } #vf.armed { background: var(--fix); }
+  #pts { display: flex; gap: 6px; align-items: center; }
+  #pts button { padding: 4px 9px; font-size: 13px; }
+  #pIn.on { background: var(--yes); color: #111; } #pOut.on { background: var(--no); color: #111; } #addMode.on { background: var(--sel); color: #111; }
+  textarea, #mname { width: 100%; font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; padding: 5px 8px; }
+  textarea { resize: none; }
+  #flash { min-height: 1.3em; }
+  #retry[hidden] { display: none; }
+  #flash.err { color: var(--warn); }
+  #recent { display: grid; gap: 2px; font-size: 12px; max-height: 22vh; overflow: auto; }
+  #recent .ra { display: flex; gap: 6px; align-items: baseline; }
+  #recent .ra .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #recent .ra.dead .t { text-decoration: line-through; opacity: .5; }
+  #who input { font: inherit; color: var(--text); background: #1b1f25; border: 1px solid #3a414c; border-radius: 8px; padding: 4px 8px; min-width: 0; flex: 1; }
+  #tip { position: fixed; z-index: 20; pointer-events: none; background: rgba(10,12,15,.93); border: 1px solid #35506a; border-radius: 6px;
+    padding: 4px 8px; font-size: 12.5px; max-width: 420px; transform: translate(14px, 10px); }
+  #tip .sub { color: var(--muted); }
+  #help { font-size: 11.5px; line-height: 1.55; }
+  #help kbd { font-size: 10.5px; padding: 0 3px; }
+  #legend { position: fixed; left: 10px; bottom: 22px; z-index: 5; font-size: 12px; padding: 5px 10px; }
+  #legend i { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin: 0 3px 0 6px; border: 2px solid; border-radius: 3px; }
+  #status { position: fixed; top: 12px; left: 12px; z-index: 6; font-size: 13px; padding: 6px 10px; }
+  #mode { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; font-size: 13px; padding: 5px 12px; }
+  #stats { font-variant-numeric: tabular-nums; }
+  #zbtns { position: fixed; left: 10px; top: 50%; transform: translateY(-50%); z-index: 6; display: grid; gap: 6px; }
+  #zbtns button { width: 38px; height: 38px; font-size: 20px; padding: 0; }
+  @media (max-width: 760px) {
+    :root { --side: 0px; }
+    #mapWrap { right: 0; bottom: 50vh; }
+    #side { top: auto; left: 0; height: 50vh; width: auto; border-left: none; border-top: 1px solid var(--line); }
+    #legend { bottom: calc(50vh + 8px); }
+    #help { display: none; }
+    #verdicts button kbd { display: none; }
+  }
+</style>
+</head>
+<body class="fullbleed">
+<div id="mapWrap"><div id="map"></div><canvas id="cv"></canvas></div>
+<div id="legend" class="panel muted"><i style="border-color:#fff"></i>unreviewed<i style="border-color:var(--yes)"></i>yes<i style="border-color:var(--no)"></i>no<i style="border-color:var(--maybe)"></i>maybe<i style="border-color:var(--fix)"></i>fix<i style="border-color:#aaa;border-style:dashed"></i>already a feature<i style="border-color:var(--sel)"></i>selected</div>
+<div id="status" class="panel muted">Loading…</div>
+<div id="zbtns"><button id="zIn" title="Zoom in (=)">+</button><button id="zOut" title="Zoom out (-)">−</button></div>
+<div id="mode" class="panel" hidden></div>
+<div id="tip" hidden></div>
+
+<aside id="side">
+  <div id="head">
+    <div class="row"><b class="grow">Protected areas · board</b><a class="small" href="index.html" style="color:#9fd8ff">gavel ›</a></div>
+    <div class="row">
+      <label title="Dim blobs you've already decided (E toggles existing features)"><input id="fDone" type="checkbox"> hide decided</label>
+      <label title="Draw existing protected / forest-park features (grey dashed)"><input id="fFeat" type="checkbox" checked> features</label>
+      <label title="Show paper/umbrella designations (biosphere reserves, Ramsar, transfrontier…) as dotted outlines"><input id="fUmb" type="checkbox" checked> umbrella</label>
+      <label title="Map labels (L)"><input id="fLabels" type="checkbox"> labels</label>
+    </div>
+  </div>
+  <div id="body">
+    <div class="row"><span id="selHead" class="grow">Nothing selected</span><button id="blobBtn" class="linkish small" title="Expand the selection to whole blobs (B)">whole blobs</button><button id="zoomSel" class="linkish small" title="Zoom to the selection (Z)">zoom</button></div>
+    <div id="selList" class="small muted">Click an outline to select it; Shift-click (or A mode) adds/removes; click a selected member again for its whole blob.</div>
+    <div><div class="small muted" style="margin-bottom:2px">Recent (undo sends a retraction; pending ones just cancel)</div><div id="recent"></div></div>
+  </div>
+  <div id="foot">
+    <div id="verdicts">
+      <button id="vy" data-v="yes" title="Yes: one feature per blob (selected members of each blob) (Y)">Yes<kbd>Y</kbd></button>
+      <button id="vn" data-v="no" title="No (N)">No<kbd>N</kbd></button>
+      <button id="vm" data-v="maybe" title="Maybe (M)">Maybe<kbd>M</kbd></button>
+      <button id="vg" data-v="merge" title="Merge + yes: everything selected is one block, one feature (G)">Merge<kbd>G</kbd></button>
+      <button id="vf" data-v="fix" title="Fix: redraw the union outline in the editor (F)">Fix<kbd>F</kbd></button>
+    </div>
+    <input id="mname" maxlength="200" placeholder="Name for a merged block (optional, used by G)">
+    <textarea id="note" rows="2" placeholder="Note (/ to type; Enter sends the armed verdict; Shift+Y/N/M/G arms one)"></textarea>
+    <div id="pts">
+      <button id="pIn" title="Include points: click spots that belong inside (I)">+ in <kbd>I</kbd></button>
+      <button id="pOut" title="Exclude points: click spots that should be outside (O)">− out <kbd>O</kbd></button>
+      <button id="addMode" title="Add mode: plain clicks add/remove members, like Shift-click (A)">add <kbd>A</kbd></button>
+      <span id="ptCount" class="small muted grow"></span>
+    </div>
+    <div class="row"><span id="flash" class="small muted grow"></span><button id="retry" class="linkish small" hidden></button></div>
+    <div id="who" class="row small"></div>
+    <div id="help" class="muted"><kbd>click</kbd> select member · again = whole blob · <kbd>⇧</kbd>/<kbd>A</kbd> add/remove · <kbd>Alt</kbd>-click whole blob · <kbd>B</kbd> whole blobs ·
+      <kbd>Y</kbd><kbd>N</kbd><kbd>M</kbd> verdict (one item per blob) · <kbd>G</kbd> merge+yes · <kbd>F</kbd> redraw · <kbd>I</kbd>/<kbd>O</kbd> ± points (click a point to remove) ·
+      <kbd>/</kbd> note, <kbd>Enter</kbd> sends · <kbd>Esc</kbd> clear · <kbd>⌘Z</kbd> undo · <kbd>Z</kbd> zoom to selection · <kbd>H</kbd> hold to hide outlines · <kbd>E</kbd> features · <kbd>L</kbd> labels
+      <div id="stats" class="small"></div></div>
+  </div>
+</aside>
+
+<script type="module">
+import { loadMaps, loadJSON } from '../../lib/maps.js';
+import { FB_NAME, FB_OWNER, lsGet, lsSet, fbPost, fbQueue, fbSave } from '../../lib/feedback.js';
+import { openPolyEdit, activeEditor } from '../../lib/polyedit.js';
+
+// Map-wide review board for the protected-area queue (apps/review/index.html is the one-blob-at-a-time gavel).
+// Everything is drawn on one canvas over the Google map (thousands of outlines; Maps Polygons would crawl): world (Web
+// Mercator, 256 px at z0) coordinates per ring, Douglas-Peucker LOD per integer zoom, culled to the viewport.
+// Verdict items: {type:'review', queue:'protected', verdict, candidate_id, candidate_name, members:[refs], note,
+// include, exclude, feature_name?, geometry?}; 'merge' = yes as one block; 'retract' (with retracts: <ts>) undoes a sent one.
+const QUEUE = 'protected', DATA = '../../data/review/';
+const VKEY = `geolab.review.${QUEUE}`, BKEY = `geolab.review.${QUEUE}.board`, UKEY = `geolab.review.${QUEUE}.boardui`;
+const SEND_DELAY = 6000, MAX_MEMBERS = 300;
+const COL = { none: '#ffffff', yes: '#5ad17a', no: '#ff6b6b', maybe: '#f0b84a', fix: '#c58cff', auto: '#ff6b6b' };
+const FILL = { none: .05, yes: .3, no: .25, maybe: .26, fix: .3, auto: .08 };
+const KEYV = { y: 'yes', n: 'no', m: 'maybe', g: 'merge', f: 'fix' };
+const vc = v => v === 'merge' ? 'yes' : v;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const fmtArea = k => k == null ? '?' : k >= 10000 ? `${(k / 1000).toFixed(0)}k km²` : `${Math.round(k).toLocaleString()} km²`;
+const fmtScore = s => s == null ? '–' : (+s).toFixed(s >= 10 ? 0 : 1);
+const lsJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || '') ?? d; } catch { return d; } };
+const lsPut = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+// ---------- projection ----------
+const R2D = 180 / Math.PI;
+const wx = lng => (lng + 180) / 360 * 256;
+const wy = lat => { const s = Math.sin(Math.max(-85.05, Math.min(85.05, lat)) / R2D); return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256; };
+const lngOf = x => x / 256 * 360 - 180;
+const latOf = y => R2D * Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 256)));
+
+// ---------- state ----------
+let map, gm, cv, ctx, view = null;
+const R = {};                       // region -> {bb, state}
+const qById = new Map();            // queue index rows
+const blobById = new Map(), memberByRef = new Map(), allMembers = [], allBlobs = [];
+let feats = [], prefilter = {}, serverItems = [];
+let sel = [], hover = null, hoverFeat = null, mode = null, addMode = false, armed = null, pendingFix = null;
+let inPts = [], outPts = [], overlayOn = true, status = new Map();
+let actions = lsJSON(BKEY, []);
+const ui = Object.assign({ done: false, feat: true, umb: true, labels: false }, lsJSON(UKEY, {}));
+const saveUI = () => lsPut(UKEY, ui);
+const stats = { frames: [], last: {} };
+
+// ---------- geometry helpers ----------
+function decodeRing(r, scale) {  // delta-encoded [x0, y0, dx, dy, …] (lng/lat * scale) -> world Float64Array [x, y, …]
+  const a = new Float64Array(r.length); let x = 0, y = 0;
+  for (let i = 0; i < r.length; i += 2) { x += r[i]; y += r[i + 1]; a[i] = wx(x / scale); a[i + 1] = wy(y / scale); }
+  return a;
+}
+function shapeOf(g, scale) {  // polys [[outer, hole…]…] -> {rings, outer: [bool], bb}
+  const rings = [], outer = [];
+  for (const poly of g) poly.forEach((r, k) => { if (r.length >= 6) { rings.push(decodeRing(r, scale)); outer.push(k === 0); } });
+  return { rings, outer, bb: bbOf(rings), lod: {} };
+}
+function geoShape(g) {  // GeoJSON Polygon/MultiPolygon -> shape
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+  const rings = [], outer = [];
+  for (const p of polys) p.forEach((r, k) => {
+    const a = new Float64Array(r.length * 2); r.forEach((c, i) => { a[2 * i] = wx(c[0]); a[2 * i + 1] = wy(c[1]); });
+    rings.push(a); outer.push(k === 0);
+  });
+  return { rings, outer, bb: bbOf(rings), lod: {} };
+}
+function bbOf(rings) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const a of rings) for (let i = 0; i < a.length; i += 2) { const x = a[i], y = a[i + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return [x0, y0, x1, y1];
+}
+function dp(a, tol) {  // Douglas-Peucker on a closed ring of [x, y, …]; returns a new Float64Array
+  const n = a.length / 2; if (n <= 4) return a;
+  const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+  let far = 0, fd = -1; for (let i = 1; i < n; i++) { const d = (a[2 * i] - a[0]) ** 2 + (a[2 * i + 1] - a[1]) ** 2; if (d > fd) { fd = d; far = i; } }
+  keep[far] = 1;
+  const st = [0, far, far, n - 1], t2 = tol * tol;
+  while (st.length) {
+    const b = st.pop(), s = st.pop(); if (b - s < 2) continue;
+    const ax = a[2 * s], ay = a[2 * s + 1], dx = a[2 * b] - ax, dy = a[2 * b + 1] - ay, L = dx * dx + dy * dy;
+    let best = -1, bi = -1;
+    for (let i = s + 1; i < b; i++) {
+      const px = a[2 * i] - ax, py = a[2 * i + 1] - ay; let t = L ? (px * dx + py * dy) / L : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const d = (px - t * dx) ** 2 + (py - t * dy) ** 2; if (d > best) { best = d; bi = i; }
+    }
+    if (best > t2) { keep[bi] = 1; st.push(s, bi, bi, b); }
+  }
+  let m = 0; for (let i = 0; i < n; i++) m += keep[i];
+  const o = new Float64Array(m * 2); let j = 0;
+  for (let i = 0; i < n; i++) if (keep[i]) { o[j++] = a[2 * i]; o[j++] = a[2 * i + 1]; }
+  return o;
+}
+function lod(sh, z) {  // rings simplified to ~0.6 screen px at integer zoom z (full detail from z12)
+  const zi = Math.max(0, Math.min(12, Math.round(z)));
+  if (zi >= 12) return sh.rings;
+  return sh.lod[zi] ||= sh.rings.map(a => dp(a, 0.6 / 2 ** zi)).filter(a => a.length >= 6);
+}
+function pip(sh, x, y) {  // even-odd over all rings
+  let inside = false;
+  for (const a of sh.rings) {
+    const n = a.length;
+    for (let i = 0, j = n - 2; i < n; j = i, i += 2) {
+      const yi = a[i + 1], yj = a[j + 1];
+      if ((yi > y) !== (yj > y) && x < (a[j] - a[i]) * (y - yi) / (yj - yi) + a[i]) inside = !inside;
+    }
+  }
+  return inside;
+}
+const hash6 = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36).slice(0, 6); };
+
+// ---------- data ----------
+async function loadRegion(r) {
+  if (R[r].state) return; R[r].state = 'loading';
+  let d;
+  try { d = await loadJSON(DATA + `protected_${r}.json`); } catch (e) { R[r].state = null; flash(`${r}: ${e.message}`, true); return; }
+  const sc = d.scale || 1e4;
+  for (const [id, b] of Object.entries(d.blobs)) {
+    const q = qById.get(id) || {};
+    const B = { id, region: r, name: q.name || b.members[0]?.name || id, country: q.country || '', km2: q.km2, rank: q.rank, score: q.score,
+      members: [], ...shapeOf(b.g || [], sc) };
+    for (const m of b.members || []) {
+      if (memberByRef.has(m.ref)) continue;
+      const M = { ...m, g: undefined, blob: B, ...shapeOf(m.g || [], sc) };
+      if (!M.rings.length) continue;
+      M.w = M.bb[2] - M.bb[0]; M.h = M.bb[3] - M.bb[1];
+      B.members.push(M); memberByRef.set(m.ref, M); allMembers.push(M);
+    }
+    if (!B.members.length) continue;
+    if (!B.rings.length) Object.assign(B, { rings: B.members.flatMap(m => m.rings), outer: B.members.flatMap(m => m.outer) }, { bb: bbOf(B.members.flatMap(m => m.rings)) });
+    B.km2 ??= B.members.reduce((s, m) => s + (m.km2 || 0), 0);
+    B.umb = B.members.every(m => m.umb);
+    blobById.set(id, B); allBlobs.push(B);
+  }
+  R[r].state = 'loaded';
+  rebuildStatus(); scheduleDraw(); renderSel();
+  if (wantBlob && blobById.has(wantBlob)) { setSel(blobById.get(wantBlob).members.map(m => m.ref)); wantBlob = null; }
+}
+function ensureRegions() {
+  if (!view) return;
+  for (const r in R) {
+    const b = R[r].bb;
+    if (!R[r].state && b[0] < view.x1 && b[2] > view.x0 && b[1] < view.y1 && b[3] > view.y0) loadRegion(r);
+  }
+}
+async function loadFeatures() {
+  try {
+    const d = await loadJSON('../../data/build/features.json');
+    feats = d.features.filter(f => f.geometry && /Polygon/.test(f.geometry.type)
+      && (['forest-park', 'wetland'].includes(f.category) || /^protected/.test(f.src || '')))
+      .map(f => ({ id: f.id, name: f.name, src: f.src, category: f.category, ...geoShape(f.geometry) }));
+    scheduleDraw();
+  } catch (e) { console.warn('features', e); }
+}
+async function loadServer() {  // verdicts already on disk (local dev server; on the site this 404s and we rely on localStorage)
+  try {
+    const r = await fetch('../../data/feedback/review_protected.jsonl', { cache: 'no-cache' });
+    if (!r.ok) return;
+    serverItems = (await r.text()).split('\n').filter(l => l.trim()).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    rebuildStatus(); scheduleDraw(); renderSel();
+  } catch {}
+}
+
+// ---------- verdict status per member ----------
+function refsOfItem(it) {
+  if (Array.isArray(it.members) && it.members.length) return it.members;
+  const B = blobById.get(it.candidate_id);
+  if (B) return B.members.map(m => m.ref);
+  const id = String(it.candidate_id || '').replace(/^p[am]:/, '');
+  return id.split(/[+,]/).filter(x => x && !x.includes('~'));
+}
+function rebuildStatus() {
+  const ev = [];
+  // server lines (later lines win; a 'retract' removes the item it names)
+  const live = [];
+  for (const it of serverItems) {
+    if (it.verdict === 'retract') { for (let k = live.length - 1; k >= 0; k--) if (live[k].candidate_id === it.candidate_id && (!it.retracts || live[k].ts === it.retracts)) { live.splice(k, 1); break; } }
+    else live.push(it);
+  }
+  for (const it of live) ev.push({ ts: it.ts || it.received || '', v: it.verdict, refs: refsOfItem(it), note: it.note, src: 'sent' });
+  const gv = lsJSON(VKEY, {});
+  for (const [bid, x] of Object.entries(gv)) if (x?.v) ev.push({ ts: x.ts || '', v: x.v, refs: refsOfItem({ candidate_id: bid }), note: x.note, src: x.board ? 'board' : 'gavel' });
+  for (const a of actions) if (a.state !== 'cancelled' && a.state !== 'retracted')
+    for (const it of a.items) ev.push({ ts: it.ts, v: it.verdict, refs: it.members, note: it.note, src: 'board' });
+  ev.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  status = new Map();
+  for (const [bid, x] of Object.entries(prefilter)) if (x?.auto === 'no') for (const r of refsOfItem({ candidate_id: bid })) status.set(r, { v: 'auto', note: x.reason, src: 'prefilter' });
+  for (const e of ev) if (['yes', 'no', 'maybe', 'fix', 'merge'].includes(e.v)) for (const r of e.refs || []) status.set(r, e);
+}
+const stOf = M => vc(status.get(M.ref)?.v) || 'none';
+function blobSt(B) { const s = stOf(B.members[0]); return B.members.every(m => stOf(m) === s) ? s : 'none'; }
+
+// ---------- drawing ----------
+let drawQueued = false;
+function scheduleDraw() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; draw(); }); } }
+function addRings(rings, s, ox, oy) {
+  let nv = 0;
+  for (const a of rings) {
+    ctx.moveTo(a[0] * s - ox, a[1] * s - oy);
+    for (let i = 2; i < a.length; i += 2) ctx.lineTo(a[i] * s - ox, a[i + 1] * s - oy);
+    ctx.lineTo(a[0] * s - ox, a[1] * s - oy);  // not closePath(): Chrome's closePath is ~O(path length) per call
+    nv += a.length / 2;
+  }
+  return nv;
+}
+function draw() {
+  if (!map) return;
+  const t0 = performance.now();
+  const W = cv.clientWidth, H = cv.clientHeight, dpr = devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const c = map.getCenter(), z = map.getZoom(); if (!c || z == null) return;
+  const s = 2 ** z, ox = wx(c.lng()) * s - W / 2, oy = wy(c.lat()) * s - H / 2;
+  view = { x0: ox / s, y0: oy / s, x1: (ox + W) / s, y1: (oy + H) / s, s, ox, oy, z };
+  ensureRegions();
+  if (!overlayOn) return;
+  const inView = o => o.bb[0] < view.x1 && o.bb[2] > view.x0 && o.bb[1] < view.y1 && o.bb[3] > view.y0;
+  const minPx = 2.5 / s;
+  let nv = 0, nOut = 0, nDots = 0;
+  ctx.lineJoin = 'round';
+  // existing features: grey dashed
+  if (ui.feat && feats.length) {
+    ctx.beginPath();
+    for (const f of feats) if (inView(f) && (f.bb[2] - f.bb[0] > minPx || f.bb[3] - f.bb[1] > minPx)) { nv += addRings(lod(f, z), s, ox, oy); nOut++; }
+    ctx.fillStyle = 'rgba(200,200,200,.10)'; ctx.fill();
+    ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#c8c8c8'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+  }
+  // members grouped by status; tiny ones as dots
+  const selSet = new Set(sel), groups = {}, dots = {}, umbs = [];
+  for (const M of allMembers) {
+    if (!inView(M)) continue;
+    if (M.umb && !ui.umb && !selSet.has(M.ref)) continue;
+    const st = stOf(M);
+    if (ui.done && st !== 'none' && !selSet.has(M.ref)) continue;
+    if (M.w < minPx && M.h < minPx) { (dots[st] ||= []).push(M); continue; }
+    if (M.umb) { umbs.push(M); continue; }
+    (groups[st] ||= []).push(M);
+  }
+  for (const st in groups) {
+    ctx.beginPath();
+    for (const M of groups[st]) nv += addRings(lod(M, z), s, ox, oy);
+    nOut += groups[st].length;
+    ctx.globalAlpha = FILL[st]; ctx.fillStyle = COL[st]; ctx.fill();
+    ctx.globalAlpha = st === 'none' ? .55 : .85; ctx.strokeStyle = COL[st]; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  if (umbs.length) {
+    ctx.beginPath(); for (const M of umbs) nv += addRings(lod(M, z), s, ox, oy); nOut += umbs.length;
+    ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+  }
+  // blob outlines (the grouped block; single reserves too), bold, coloured when all members agree
+  const bgroups = {};
+  for (const B of allBlobs) {
+    if (!inView(B) || (B.bb[2] - B.bb[0] < 12 / s && B.bb[3] - B.bb[1] < 12 / s)) continue;  // small ones: member line only
+    if (B.umb && !ui.umb) continue;
+    const st = blobSt(B); if (ui.done && st !== 'none') continue;
+    (bgroups[st] ||= []).push(B);
+  }
+  for (const st in bgroups) {
+    ctx.beginPath(); for (const B of bgroups[st]) nv += addRings(lod(B, z), s, ox, oy); nOut += bgroups[st].length;
+    ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.strokeStyle = COL[st]; ctx.lineWidth = 2; ctx.stroke();
+  }
+  for (const st in dots) {
+    ctx.fillStyle = COL[st]; ctx.globalAlpha = st === 'none' ? .7 : 1;
+    for (const M of dots[st]) { ctx.fillRect((M.bb[0] + M.bb[2]) / 2 * s - ox - 1.5, (M.bb[1] + M.bb[3]) / 2 * s - oy - 1.5, 3, 3); nDots++; }
+    ctx.globalAlpha = 1;
+  }
+  // selection + hover on top
+  if (sel.length) {
+    ctx.beginPath();
+    for (const r of sel) { const M = memberByRef.get(r); if (M && inView(M)) nv += addRings(lod(M, z), s, ox, oy); }
+    ctx.fillStyle = 'rgba(79,227,255,.22)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 4.5; ctx.stroke();
+    ctx.strokeStyle = '#4fe3ff'; ctx.lineWidth = 2.2; ctx.stroke();
+  }
+  if (hover) {
+    ctx.beginPath(); addRings(lod(hover, z), s, ox, oy);
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 4.5; ctx.stroke(); ctx.strokeStyle = '#ffe27a'; ctx.lineWidth = 2.2; ctx.stroke();
+  } else if (hoverFeat) {
+    ctx.beginPath(); addRings(lod(hoverFeat, z), s, ox, oy); ctx.strokeStyle = '#eee'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  // include / exclude points
+  for (const [pts, col, sym] of [[inPts, COL.yes, '+'], [outPts, COL.no, '−']]) for (const [lat, lng] of pts) {
+    const x = wx(lng) * s - ox, y = wy(lat) * s - oy;
+    ctx.beginPath(); ctx.arc(x, y, 8, 0, 7); ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = '#000'; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(sym, x, y + 1);
+  }
+  const ms = performance.now() - t0;
+  stats.frames.push(ms); if (stats.frames.length > 120) stats.frames.shift();
+  stats.last = { outlines: nOut, dots: nDots, vertices: nv, ms: +ms.toFixed(1), z, members: allMembers.length };
+  $('stats').textContent = `${nOut.toLocaleString()} outlines + ${nDots} dots · ${nv >= 1e4 ? (nv / 1000).toFixed(0) + 'k' : nv} vertices · ${ms.toFixed(1)} ms · ${allMembers.length.toLocaleString()} members loaded`;
+}
+
+// ---------- hover / hit testing ----------
+function hitAt(lat, lng) {
+  const x = wx(lng), y = wy(lat);
+  let best = null, bestK = Infinity;
+  for (const M of allMembers) {
+    const b = M.bb; if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
+    if (M.umb && !ui.umb) continue;
+    if (ui.done && stOf(M) !== 'none' && !sel.includes(M.ref)) continue;
+    const k = (M.km2 || M.w * M.h * 1e6) * (M.umb ? 1e6 : 1);  // smallest wins; umbrella designations last
+    if (k < bestK && pip(M, x, y)) { best = M; bestK = k; }
+  }
+  // tiny members: snap to a dot within ~5 px
+  if (!best && view) {
+    const tol = 5 / view.s;
+    for (const M of allMembers) { const b = M.bb; if (x > b[0] - tol && x < b[2] + tol && y > b[1] - tol && y < b[3] + tol && M.w < tol && M.h < tol) { best = M; break; } }
+  }
+  return best;
+}
+function featAt(lat, lng) {
+  if (!ui.feat) return null;
+  const x = wx(lng), y = wy(lat);
+  for (const f of feats) { const b = f.bb; if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && pip(f, x, y)) return f; }
+  return null;
+}
+function tipHtml(M) {
+  const st = status.get(M.ref), B = M.blob;
+  const sc = M.gscore != null ? `${fmtScore(M.score)} / G ${fmtScore(M.gscore)}` : fmtScore(M.score);
+  return `<b>${esc(M.name)}</b>${st ? ` <span class="chip c-${esc(st.v)}">${esc(st.v === 'auto' ? 'auto-no' : st.v)}</span>` : ''}<br>
+    <span class="sub">${M.umb ? 'umbrella · ' : ''}${esc(M.desig)}${M.year ? ` · ${M.year}` : ''} · ${fmtArea(M.km2)} · score ${sc}</span>
+    ${B.members.length > 1 ? `<br><span class="sub">blob: ${esc(B.name)} (${B.members.length} members, ${fmtArea(B.km2)}, score ${fmtScore(B.rank)})</span>` : ''}
+    ${M.vis ? `<br><span class="sub">👁 ${esc(M.vis)}</span>` : ''}${st?.note ? `<br><i class="sub">${esc(st.note.slice(0, 160))}</i>` : ''}`;
+}
+let lastMove = null, moveQueued = false;
+function onMove(e) {
+  lastMove = e;
+  if (moveQueued) return; moveQueued = true;
+  requestAnimationFrame(() => {
+    moveQueued = false; const e = lastMove; if (!e?.latLng || activeEditor()) return;
+    const M = hitAt(e.latLng.lat(), e.latLng.lng()), F = M ? null : featAt(e.latLng.lat(), e.latLng.lng());
+    if (M !== hover || F !== hoverFeat) { hover = M; hoverFeat = F; scheduleDraw(); }
+    const tip = $('tip'), de = e.domEvent;
+    if ((M || F) && de?.clientX != null) {
+      tip.innerHTML = M ? tipHtml(M) : `<b>${esc(F.name)}</b><br><span class="sub">already a feature · ${esc(F.category)} · ${esc(F.src || '')}</span>`;
+      tip.hidden = false;
+      const x = Math.min(de.clientX, innerWidth - tip.offsetWidth - 30);
+      tip.style.left = x + 'px'; tip.style.top = de.clientY + 'px';
+    } else tip.hidden = true;
+    map.setOptions({ draggableCursor: mode ? 'crosshair' : M ? 'pointer' : null });
+  });
+}
+
+// ---------- selection ----------
+function setSel(refs) { sel = [...new Set(refs)].filter(r => memberByRef.has(r)); renderSel(); scheduleDraw(); }
+function toggle(ref) { setSel(sel.includes(ref) ? sel.filter(r => r !== ref) : [...sel, ref]); }
+const blobsOf = refs => [...new Set(refs.map(r => memberByRef.get(r)?.blob).filter(Boolean))];
+function onClick(e) {
+  if (activeEditor() || !e.latLng) return;
+  const lat = +e.latLng.lat().toFixed(5), lng = +e.latLng.lng().toFixed(5), de = e.domEvent || {};
+  if (mode) {  // drop a ± point, or remove one clicked within 10 px
+    const s = view.s, near = p => Math.hypot((wx(p[1]) - wx(lng)) * s, (wy(p[0]) - wy(lat)) * s) < 10;
+    for (const arr of [inPts, outPts]) { const k = arr.findIndex(near); if (k >= 0) { arr.splice(k, 1); renderPts(); scheduleDraw(); return; } }
+    (mode === 'in' ? inPts : outPts).push([lat, lng]); renderPts(); scheduleDraw(); return;
+  }
+  const M = hitAt(lat, lng);
+  if (!M) { if (!de.shiftKey && !addMode) setSel([]); return; }
+  const whole = M.blob.members.map(m => m.ref);
+  if (de.altKey) setSel(de.shiftKey || addMode ? [...sel, ...whole] : whole);
+  else if (de.shiftKey || addMode) toggle(M.ref);
+  else if (sel.length === 1 && sel[0] === M.ref && whole.length > 1) setSel(whole);  // second click: the whole blob
+  else setSel([M.ref]);
+}
+function primaryOrder(refs) {  // biggest non-umbrella member first
+  return [...refs].sort((a, b) => { const A = memberByRef.get(a), B = memberByRef.get(b); return (A.umb || 0) - (B.umb || 0) || (B.km2 || 0) - (A.km2 || 0); });
+}
+function renderSel() {
+  const ms = sel.map(r => memberByRef.get(r)).filter(Boolean);
+  if (!ms.length) { $('selHead').textContent = 'Nothing selected'; $('selList').innerHTML = $('selList').dataset.help || ($('selList').dataset.help = $('selList').innerHTML); return; }
+  const bl = blobsOf(sel), km = ms.reduce((s, m) => s + (m.km2 || 0), 0);
+  const wholeN = bl.filter(B => B.members.every(m => sel.includes(m.ref))).length;
+  $('selHead').innerHTML = `${ms.length} member${ms.length > 1 ? 's' : ''} · ${fmtArea(km)} <span class="small muted">(${bl.length} blob${bl.length > 1 ? 's' : ''}${wholeN ? `, ${wholeN} whole` : ''})</span>`;
+  $('selList').innerHTML = primaryOrder(sel).slice(0, 250).map(r => {
+    const m = memberByRef.get(r), st = status.get(r);
+    return `<div class="mem" data-ref="${esc(r)}"><span class="nm">${esc(m.name)}<span class="sub">${esc(m.desig)} · ${fmtArea(m.km2)} · ${fmtScore(m.score)}${m.blob.members.length > 1 ? ` · in ${esc(m.blob.name)}` : ''}</span></span>
+      ${st ? `<span class="chip c-${esc(st.v)}">${esc(st.v === 'auto' ? 'auto-no' : st.v)}</span>` : ''}<button class="linkish x" data-rm="${esc(r)}" title="Remove from selection">×</button></div>`;
+  }).join('') + (sel.length > 250 ? `<div class="muted">… ${sel.length - 250} more</div>` : '');
+}
+$('selList').addEventListener('click', e => {
+  const rm = e.target.closest('[data-rm]'); if (rm) { toggle(rm.dataset.rm); return; }
+  const el = e.target.closest('.mem'); if (el) zoomTo([el.dataset.ref]);
+});
+$('selList').addEventListener('mouseover', e => { const el = e.target.closest('.mem'); const M = el && memberByRef.get(el.dataset.ref); if (M !== hover) { hover = M || null; scheduleDraw(); } });
+function zoomTo(refs) {
+  const ms = refs.map(r => memberByRef.get(r)).filter(Boolean); if (!ms.length) return;
+  const x0 = Math.min(...ms.map(m => m.bb[0])), y0 = Math.min(...ms.map(m => m.bb[1])), x1 = Math.max(...ms.map(m => m.bb[2])), y1 = Math.max(...ms.map(m => m.bb[3]));
+  map.fitBounds({ west: lngOf(x0), east: lngOf(x1), north: latOf(y0), south: latOf(y1) }, 60);
+}
+$('blobBtn').onclick = () => setSel(blobsOf(sel).flatMap(B => B.members.map(m => m.ref)));
+$('zoomSel').onclick = () => zoomTo(sel);
+
+// ---------- points / modes ----------
+function setMode(m) { mode = mode === m ? null : m; renderMode(); }
+function renderMode() {
+  $('pIn').classList.toggle('on', mode === 'in'); $('pOut').classList.toggle('on', mode === 'out');
+  $('mode').hidden = !mode && !addMode;
+  $('mode').textContent = mode === 'in' ? '+ in: click spots that belong inside (click a point to remove; I/Esc to stop)'
+    : mode === 'out' ? '− out: click spots that should be outside (click a point to remove; O/Esc to stop)' : 'add mode: clicks add/remove members (A to stop)';
+  map.setOptions({ draggableCursor: mode ? 'crosshair' : null });
+}
+function setAdd(on) { addMode = on; $('addMode').classList.toggle('on', on); renderMode(); }
+function renderPts() { $('ptCount').textContent = inPts.length || outPts.length ? `${inPts.length} in · ${outPts.length} out` : ''; }
+$('pIn').onclick = () => setMode('in'); $('pOut').onclick = () => setMode('out');
+$('addMode').onclick = () => setAdd(!addMode);
+
+// ---------- verdicts / sending ----------
+let flashT;
+function flash(msg, err) { $('flash').textContent = msg; $('flash').classList.toggle('err', !!err); clearTimeout(flashT); flashT = setTimeout(() => { $('flash').textContent = ''; }, 5000); }
+function setArmed(v) { armed = v; for (const b of document.querySelectorAll('#verdicts button')) b.classList.toggle('armed', b.dataset.v === v); }
+function makeItem(verdict, refs, extra = {}) {
+  refs = primaryOrder(refs);
+  const M0 = memberByRef.get(refs[0]), bl = blobsOf(refs);
+  const single = bl.length === 1 && bl[0].members.length === refs.length;
+  const cid = single ? bl[0].id : `pm:${refs[0]}` + (refs.length > 1 ? `+${refs.length - 1}~${hash6([...refs].sort().join(','))}` : '');
+  const name = single ? bl[0].name : refs.length > 1 ? `${M0.name} +${refs.length - 1}` : M0.name;
+  return { type: 'review', queue: QUEUE, candidate_id: cid, candidate_name: name, verdict, members: refs, note: $('note').value.trim(),
+    ts: new Date().toISOString(), view: viewNow(), ...extra };
+}
+const viewNow = () => { const c = map.getCenter(); return { lat: +c.lat().toFixed(4), lng: +c.lng().toFixed(4), z: map.getZoom() }; };
+function verdict(v) {
+  if (activeEditor()) return;
+  if (!sel.length) { flash('Select something first (click an outline)', true); return; }
+  if (v === 'fix' && !pendingFix) return fixEdit();
+  let items;
+  if (v === 'merge' || v === 'fix') {  // one item over everything selected
+    if (sel.length > MAX_MEMBERS) { flash(`Too many members (${sel.length} > ${MAX_MEMBERS}) for one block`, true); return; }
+    const extra = { include: inPts, exclude: outPts };
+    if (v === 'merge' && $('mname').value.trim()) extra.feature_name = $('mname').value.trim();
+    if (v === 'fix' && pendingFix?.g) Object.assign(extra, { geometry: pendingFix.g, geom_meta: pendingFix.meta });
+    items = [makeItem(v, sel, extra)];
+  } else {  // yes / no / maybe: one item per blob (its selected members), so separate blobs stay separate features
+    const groups = new Map();
+    for (const r of sel) { const B = memberByRef.get(r).blob; if (!groups.has(B)) groups.set(B, []); groups.get(B).push(r); }
+    const allIn = [...inPts], allOut = [...outPts];
+    items = [...groups.values()].map((g, k) => {
+      const inc = groups.size === 1 ? allIn : allIn.filter(p => g.some(r => pip(memberByRef.get(r), wx(p[1]), wy(p[0])))),
+        exc = groups.size === 1 ? allOut : allOut.filter(p => g.some(r => { const b = memberByRef.get(r).bb, x = wx(p[1]), y = wy(p[0]); return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]; }));
+      return makeItem(v, g, { include: inc, exclude: exc });
+    });
+  }
+  const label = `${v} · ${items.length > 1 ? `${items.length} blobs (${sel.length} members)` : items[0].candidate_name}`;
+  commit(label, items);
+}
+function commit(label, items) {
+  const a = { aid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), label, items,
+    state: 'pending', due: Date.now() + SEND_DELAY, prevSel: [...sel], prevPts: [inPts, outPts], prevNote: $('note').value };
+  actions.push(a); if (actions.length > 400) actions = actions.slice(-400);
+  saveActions(); markGavel(a, true);
+  setSel([]); inPts = []; outPts = []; renderPts(); $('note').value = ''; $('mname').value = ''; $('note').blur(); setArmed(null); pendingFix = null;
+  mode = null; renderMode();
+  rebuildStatus(); scheduleDraw(); renderRecent();
+  flash(`${label}: sending in ${SEND_DELAY / 1000}s (⌘Z undoes)`);
+}
+const saveActions = () => lsPut(BKEY, actions.map(a => ({ ...a, prevSel: a.state === 'pending' ? a.prevSel : undefined, prevPts: undefined })));
+function markGavel(a, on) {  // mirror whole-blob verdicts into the gavel's store so it skips (or un-skips) them
+  const gv = lsJSON(VKEY, {});
+  for (const it of a.items) {
+    const set = new Set(it.members);
+    for (const B of blobsOf(it.members)) {
+      if (!B.members.every(m => set.has(m.ref))) continue;
+      if (on) gv[B.id] = { v: vc(it.verdict), note: it.note, ts: it.ts, board: true, ...(it.geometry ? { geom: true } : {}) };
+      else if (gv[B.id]?.ts === it.ts) delete gv[B.id];
+    }
+  }
+  lsPut(VKEY, gv);
+}
+async function sendAction(a) {
+  a.state = 'sending'; renderRecent();
+  let failed = 0;
+  for (const it of a.items) {
+    const res = await fbPost(it);
+    if (res !== 'ok') { failed++; const q = fbQueue(); q.push(it); fbSave(q); }
+  }
+  a.state = failed ? 'queued' : 'sent'; saveActions(); renderRecent(); refreshRetry();
+  if (failed) flash(`${failed} item(s) unsent: saved to retry`, true); else { flash(`✓ sent: ${a.label}`); flushQueue(); loadServer(); }
+}
+function undo(a) {
+  if (!a) a = [...actions].reverse().find(x => !['cancelled', 'retracted'].includes(x.state));
+  if (!a) { flash('Nothing to undo'); return; }
+  markGavel(a, false);
+  if (a.state === 'pending') {
+    a.state = 'cancelled'; setSel(a.prevSel || []);
+    if (a.prevPts) { [inPts, outPts] = a.prevPts; renderPts(); }
+    if (a.prevNote) $('note').value = a.prevNote;
+    flash(`Cancelled (never sent): ${a.label}`);
+  } else {
+    // items still in the offline queue are just dropped there; the ones that went out get a retraction each
+    const key = x => x.candidate_id + '|' + x.ts, q = fbQueue(), queued = new Set(q.filter(x => x.type === 'review').map(key));
+    fbSave(q.filter(x => !(x.type === 'review' && a.items.some(it => key(it) === key(x)))));
+    a.state = 'retracted';
+    for (const it of a.items.filter(it => !queued.has(key(it)))) {
+      const r = { type: 'review', queue: QUEUE, verdict: 'retract', candidate_id: it.candidate_id, candidate_name: it.candidate_name,
+        members: it.members, retracts: it.ts, note: 'undo', ts: new Date().toISOString() };
+      fbPost(r).then(res => { if (res !== 'ok') { const q2 = fbQueue(); q2.push(r); fbSave(q2); refreshRetry(); } else loadServer(); });
+    }
+    flash(`Retracted: ${a.label}`);
+  }
+  saveActions(); rebuildStatus(); scheduleDraw(); renderRecent(); renderSel(); refreshRetry();
+}
+function renderRecent() {
+  const now = Date.now();
+  $('recent').innerHTML = [...actions].reverse().slice(0, 15).map(a => {
+    const dead = a.state === 'cancelled' || a.state === 'retracted', v = a.items[0]?.verdict;
+    const st = a.state === 'pending' ? `in ${Math.max(0, Math.ceil((a.due - now) / 1000))}s` : a.state;
+    return `<div class="ra${dead ? ' dead' : ''}"><span class="chip c-${esc(v)}">${esc(v)}</span><span class="t" title="${esc(a.items.map(i => i.candidate_name + (i.note ? ': ' + i.note : '')).join('\n'))}">${esc(a.label.replace(/^\w+ · /, ''))}</span>
+      <span class="muted">${esc(st)}</span>${dead ? '' : `<button class="linkish" data-undo="${a.aid}">undo</button>`}</div>`;
+  }).join('') || '<span class="muted">none yet</span>';
+}
+$('recent').addEventListener('click', e => { const b = e.target.closest('[data-undo]'); if (b) undo(actions.find(a => a.aid === b.dataset.undo)); });
+setInterval(() => {
+  const now = Date.now(); let any = false;
+  for (const a of actions) if (a.state === 'pending') { any = true; if (a.due <= now) sendAction(a); }
+  if (any) renderRecent();
+}, 500);
+function sendPendingNow() { for (const a of actions) if (a.state === 'pending') sendAction(a); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') sendPendingNow(); });
+addEventListener('pagehide', () => {  // can't await a fetch here: park pending items in the retry queue (sent on next load)
+  const q = fbQueue(); let n = 0;
+  for (const a of actions) if (a.state === 'pending') { q.push(...a.items); a.state = 'queued'; n++; }
+  if (n) { fbSave(q); saveActions(); }
+});
+function refreshRetry() { const n = fbQueue().filter(x => x.type === 'review').length; $('retry').hidden = !n; $('retry').textContent = `${n} unsent – retry`; }
+async function flushQueue() {
+  const q = fbQueue(); if (!q.some(x => x.type === 'review')) return;
+  const left = []; for (const x of q) if (x.type !== 'review' || await fbPost(x) !== 'ok') left.push(x);
+  fbSave(left); refreshRetry();
+  for (const a of actions) if (a.state === 'queued' && !a.items.some(it => left.some(x => x.ts === it.ts && x.candidate_id === it.candidate_id))) a.state = 'sent';
+  saveActions(); renderRecent();
+}
+$('retry').onclick = async () => { await flushQueue(); flash(fbQueue().some(x => x.type === 'review') ? 'Still unsent' : 'Sent ✓'); };
+for (const b of document.querySelectorAll('#verdicts button')) b.onclick = () => verdict(b.dataset.v);
+
+// ---------- fix: union outline -> polygon editor ----------
+function unionGeometry(refs) {
+  const ms = refs.map(r => memberByRef.get(r)).filter(Boolean), bl = blobsOf(refs);
+  const toGeo = sh => {  // shape -> GeoJSON (outer ring starts a polygon)
+    const polys = []; sh.rings.forEach((a, k) => { const ring = []; for (let i = 0; i < a.length; i += 2) ring.push([+lngOf(a[i]).toFixed(5), +latOf(a[i + 1]).toFixed(5)]);
+      ring.push(ring[0]); if (sh.outer[k] || !polys.length) polys.push([ring]); else polys[polys.length - 1].push(ring); });
+    return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0] } : { type: 'MultiPolygon', coordinates: polys };
+  };
+  if (bl.length === 1 && bl[0].members.length === ms.length) return toGeo(bl[0]);
+  if (ms.length === 1) return toGeo(ms[0]);
+  // raster union: fill outer rings on a grid (<= 1400 cells across; a 2-cell stroke closes slivers between touching
+  // reserves), trace the cell boundaries into rings, keep the outer ones (holes filled), simplify
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const m of ms) { x0 = Math.min(x0, m.bb[0]); y0 = Math.min(y0, m.bb[1]); x1 = Math.max(x1, m.bb[2]); y1 = Math.max(y1, m.bb[3]); }
+  const N = 1400, cell = Math.max(x1 - x0, y1 - y0) / N, pad = 3;
+  const gw = Math.ceil((x1 - x0) / cell) + 2 * pad, gh = Math.ceil((y1 - y0) / cell) + 2 * pad;
+  const c2 = (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(gw, gh) : Object.assign(document.createElement('canvas'), { width: gw, height: gh })).getContext('2d', { willReadFrequently: true });
+  c2.beginPath();
+  for (const m of ms) m.rings.forEach((a, k) => {
+    if (!m.outer[k]) return;
+    c2.moveTo((a[0] - x0) / cell + pad, (a[1] - y0) / cell + pad);
+    for (let i = 2; i < a.length; i += 2) c2.lineTo((a[i] - x0) / cell + pad, (a[i + 1] - y0) / cell + pad);
+    c2.lineTo((a[0] - x0) / cell + pad, (a[1] - y0) / cell + pad);
+  });
+  c2.fillStyle = '#000'; c2.fill('nonzero'); c2.lineWidth = 2; c2.lineJoin = 'round'; c2.strokeStyle = '#000'; c2.stroke();
+  const px = c2.getImageData(0, 0, gw, gh).data;
+  const ins = (i, j) => i >= 0 && j >= 0 && i < gw && j < gh && px[(j * gw + i) * 4 + 3] >= 128;
+  const VW = gw + 1, o1 = new Int8Array(VW * (gh + 1)).fill(-1), o2 = new Int8Array(VW * (gh + 1)).fill(-1);
+  const put = (i, j, d) => { const v = j * VW + i; if (o1[v] < 0) o1[v] = d; else o2[v] = d; };
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) if (ins(i, j)) {
+    if (!ins(i, j - 1)) put(i, j, 0); if (!ins(i + 1, j)) put(i + 1, j, 1);
+    if (!ins(i, j + 1)) put(i + 1, j + 1, 2); if (!ins(i - 1, j)) put(i, j + 1, 3);
+  }
+  const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1], polys = [];
+  for (let v0 = 0; v0 < o1.length; v0++) {
+    if (o1[v0] < 0 && o2[v0] < 0) continue;
+    const pts = []; let v = v0, din = -1;
+    for (let guard = 0; guard < 4e6; guard++) {
+      let d;
+      if (o1[v] >= 0 && o2[v] >= 0) {  // saddle: turn right of the incoming direction if possible
+        const pref = [(din + 1) % 4, din, (din + 3) % 4];
+        d = pref.find(p => p === o1[v] || p === o2[v]) ?? o1[v];
+      } else d = o1[v] >= 0 ? o1[v] : o2[v];
+      if (d === undefined || d < 0) break;
+      if (o1[v] === d) o1[v] = -1; else o2[v] = -1;
+      const i = v % VW, j = (v - i) / VW;
+      if (d !== din) pts.push(i, j);
+      din = d; v = (j + DY[d]) * VW + (i + DX[d]);
+      if (v === v0) break;
+    }
+    let area = 0; const n = pts.length / 2;
+    for (let k = 0; k < n; k++) { const k2 = (k + 1) % n; area += pts[2 * k] * pts[2 * k2 + 1] - pts[2 * k2] * pts[2 * k + 1]; }
+    if (area / 2 < 6) continue;  // holes come out negative (filled anyway); drop specks
+    const simp = dp(Float64Array.from(pts), 1.0);
+    const ring = []; for (let k = 0; k < simp.length; k += 2) ring.push([+lngOf((simp[k] - pad) * cell + x0).toFixed(5), +latOf((simp[k + 1] - pad) * cell + y0).toFixed(5)]);
+    if (ring.length < 3) continue;
+    ring.push(ring[0]); polys.push([ring]);
+  }
+  return polys.length === 1 ? { type: 'Polygon', coordinates: polys[0] } : polys.length ? { type: 'MultiPolygon', coordinates: polys } : null;
+}
+function fixEdit() {
+  if (!sel.length) { flash('Select something first', true); return; }
+  if (sel.length > MAX_MEMBERS) { flash(`Too many members (${sel.length} > ${MAX_MEMBERS})`, true); return; }
+  const refs = [...sel], t0 = performance.now(), g = pendingFix?.refs === refs.join() && pendingFix.g ? pendingFix.g : unionGeometry(refs);
+  stats.unionMs = +(performance.now() - t0).toFixed(1);
+  if (!g) { flash('Could not build an outline', true); return; }
+  const prevOverlay = overlayOn; setOverlay(false); $('tip').hidden = true;
+  const M0 = memberByRef.get(primaryOrder(refs)[0]);
+  openPolyEdit(map, { geometry: g, title: refs.length > 1 ? `${M0.name} +${refs.length - 1}` : M0.name, doneLabel: 'Done → fix',
+    onDone: (ge, meta) => {
+      pendingFix = { refs: refs.join(), g: ge || null, meta };
+      setArmed('fix'); $('note').focus();
+      flash(ge ? `Edited outline attached (${meta.vertices} vertices): Enter sends "fix"` : 'No changes: Enter sends "fix" without an outline');
+    },
+    onClose: () => setOverlay(prevOverlay) });
+}
+
+// ---------- note / keys ----------
+$('note').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const cur = sel.map(r => status.get(r)?.v).filter(Boolean), same = cur.length === sel.length && cur.every(v => v === cur[0]) ? cur[0] : null;
+    const v = armed || (same && same !== 'auto' ? same : null);
+    if (v) verdict(v); else flash('Pick a verdict: click a button, or Shift+Y/N/M/G (Alt+key sends)', true);
+  } else if (e.key === 'Escape') { $('note').blur(); setArmed(null); }
+  else if ((e.altKey || e.ctrlKey || e.metaKey) && KEYV[e.code?.replace('Key', '').toLowerCase()]) { e.preventDefault(); verdict(KEYV[e.code.replace('Key', '').toLowerCase()]); }
+});
+$('mname').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); verdict('merge'); } else if (e.key === 'Escape') $('mname').blur(); });
+function setOverlay(on) { overlayOn = on; scheduleDraw(); }
+function setLabels(on) { ui.labels = on; saveUI(); $('fLabels').checked = on; map.setMapTypeId(on ? 'hybrid' : 'satellite'); }
+addEventListener('keyup', e => { if ((e.key === 'h' || e.key === 'H') && !overlayOn && !activeEditor() && !/TEXTAREA|INPUT/.test(e.target.tagName)) setOverlay(true); });
+addEventListener('keydown', e => {
+  if (activeEditor()) return;
+  if (e.target.closest?.('textarea, input, select')) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (KEYV[k]) {
+    e.preventDefault();
+    if (e.shiftKey) { setArmed(KEYV[k]); (k === 'g' ? $('mname') : $('note')).focus(); }
+    else verdict(KEYV[k]);
+  }
+  else if (k === 'i') setMode('in');
+  else if (k === 'o') setMode('out');
+  else if (k === 'a') setAdd(!addMode);
+  else if (k === 'b') $('blobBtn').onclick();
+  else if (k === 'z') zoomTo(sel);
+  else if (k === 'e') { ui.feat = !ui.feat; $('fFeat').checked = ui.feat; saveUI(); scheduleDraw(); }
+  else if (k === 'l') setLabels(!ui.labels);
+  else if (k === 'h') { if (!e.repeat) setOverlay(false); }
+  else if (e.key === 'Escape') {
+    if (mode) { mode = null; renderMode(); } else if (addMode) setAdd(false);
+    else { setSel([]); inPts = []; outPts = []; renderPts(); setArmed(null); pendingFix = null; scheduleDraw(); }
+  }
+  else if (e.key === '/' || e.key === 'Enter') { e.preventDefault(); $('note').focus(); }
+  else if (e.key === '-' || e.key === '_') map.setZoom(map.getZoom() - 1);
+  else if (e.key === '=' || e.key === '+') map.setZoom(map.getZoom() + 1);
+});
+$('fDone').checked = ui.done; $('fFeat').checked = ui.feat; $('fUmb').checked = ui.umb; $('fLabels').checked = ui.labels;
+$('fDone').onchange = () => { ui.done = $('fDone').checked; saveUI(); scheduleDraw(); $('fDone').blur(); };
+$('fFeat').onchange = () => { ui.feat = $('fFeat').checked; saveUI(); scheduleDraw(); $('fFeat').blur(); };
+$('fUmb').onchange = () => { ui.umb = $('fUmb').checked; saveUI(); scheduleDraw(); $('fUmb').blur(); };
+$('fLabels').onchange = () => { setLabels($('fLabels').checked); $('fLabels').blur(); };
+addEventListener('storage', e => { if (e.key === VKEY) { rebuildStatus(); scheduleDraw(); renderSel(); } });
+
+// ---------- who ----------
+function renderWho() {
+  const name = lsGet(FB_NAME), owner = !!lsGet(FB_OWNER);
+  $('who').innerHTML = name && !renderWho.edit
+    ? `<span class="muted grow">Sending as <b>${esc(name)}</b>${owner ? ' ✓' : ''}</span><button class="linkish small" id="whoEdit">change</button>`
+    : `<input id="whoName" maxlength="60" placeholder="Your name (remembered here)" value="${esc(name)}">`;
+  const inp = $('whoName');
+  if (inp) inp.onchange = () => { const v = inp.value.trim(); if (v) { lsSet(FB_NAME, v); renderWho.edit = false; renderWho(); } };
+  else $('whoEdit').onclick = () => { renderWho.edit = true; renderWho(); $('whoName').focus(); };
+}
+
+// ---------- boot ----------
+let wantBlob = null;
+async function main() {
+  let idx;
+  [gm, idx] = await Promise.all([loadMaps(), loadJSON(DATA + 'protected_queue.json')]);
+  for (const b of idx.blobs) {
+    qById.set(b.id, b);
+    const r = R[b.region] ||= { bb: [Infinity, Infinity, -Infinity, -Infinity], state: null }, [w, s, e, n] = b.bbox;
+    r.bb = [Math.min(r.bb[0], wx(w)), Math.min(r.bb[1], wy(n)), Math.max(r.bb[2], wx(e)), Math.max(r.bb[3], wy(s))];
+  }
+  for (const [r, bb] of Object.entries({ africa: [-26, -47, 64, 38], asia: [60, -12, 155, 40], samerica: [-93, -57, -30, 14] }))
+    if (!R[r]) R[r] = { bb: [wx(bb[0]), wy(bb[3]), wx(bb[2]), wy(bb[1])], state: null };
+  for (const r in R) { const b = R[r].bb; R[r].bb = [b[0] - 1, b[1] - 1, b[2] + 1, b[3] + 1]; }
+  loadJSON(DATA + 'protected_prefilter.json').then(p => { prefilter = p || {}; rebuildStatus(); scheduleDraw(); }).catch(() => {});
+  // start: #@lat,lng,z, or #<blob id> (fit + select), else the Xingu / southern Amazon
+  const h = decodeURIComponent(location.hash.slice(1)), m = /^@?(-?[\d.]+),(-?[\d.]+),(\d+(?:\.\d+)?)z?$/.exec(h);
+  let center = { lat: -11.6, lng: -53.3 }, zoom = 6;
+  if (m) { center = { lat: +m[1], lng: +m[2] }; zoom = Math.round(+m[3]); }
+  map = new gm.Map($('map'), {
+    center, zoom, mapTypeId: ui.labels ? 'hybrid' : 'satellite', tilt: 0, disableDefaultUI: true, scaleControl: true, gestureHandling: 'greedy',
+    clickableIcons: false, isFractionalZoomEnabled: false, backgroundColor: '#000', disableDoubleClickZoom: true,
+    zoomControl: false,  // the outline canvas sits over Google's controls: own buttons below
+  });
+  $('zIn').onclick = () => map.setZoom(map.getZoom() + 1); $('zOut').onclick = () => map.setZoom(map.getZoom() - 1);
+  if (!m && qById.has(h)) { const [w, s, e, n] = qById.get(h).bbox; map.fitBounds({ west: w, south: s, east: e, north: n }, 80); wantBlob = h; }
+  cv = $('cv'); ctx = cv.getContext('2d');
+  map.addListener('bounds_changed', scheduleDraw);
+  map.addListener('mousemove', onMove);
+  map.addListener('mouseout', () => { $('tip').hidden = true; if (hover || hoverFeat) { hover = hoverFeat = null; scheduleDraw(); } });
+  map.addListener('click', onClick);
+  map.addListener('idle', () => { const c = map.getCenter(); history.replaceState(null, '', `#@${c.lat().toFixed(4)},${c.lng().toFixed(4)},${map.getZoom()}z`); });
+  addEventListener('resize', scheduleDraw);
+  window.__board = { map, stats, get sel() { return sel; }, setSel, status: () => status, actions: () => actions, verdict, undo, unionGeometry,
+    members: allMembers, memberByRef, blobById, sendPendingNow, setMode, get inPts() { return inPts; }, get outPts() { return outPts; }, hitAt, draw, R, view: () => view,
+    screenPt(M) {  // (tests) a screen point inside member M that hit-tests to M, or null
+      const b = M.bb; for (let k = 1; k < 600; k++) { const x = b[0] + (b[2] - b[0]) * ((k * 0.6180339) % 1), y = b[1] + (b[3] - b[1]) * ((k * 0.7548776) % 1);
+        if (hitAt(latOf(y), lngOf(x)) === M) return [Math.round(x * view.s - view.ox), Math.round(y * view.s - view.oy)]; } return null; } };
+  $('status').remove();
+  renderWho(); refreshRetry(); renderRecent(); renderPts();
+  scheduleDraw();
+  loadServer(); loadFeatures();
+  flushQueue();
+  for (const a of actions) if (a.state === 'pending' || a.state === 'sending') sendAction(a);  // left over from a closed tab: send now
+}
+main().catch(e => { $('status').textContent = 'Error: ' + e.message; console.error(e); });
+</script>
+</body>
+</html>

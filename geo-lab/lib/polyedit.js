@@ -8,11 +8,14 @@
 // rings CCW) or null when nothing changed; meta = { vertices, orig_vertices, tol_m, parts }.
 //
 // Controls (shown in the editor's own HUD):
-//   drag a vertex · click a midpoint handle to add a vertex there · right-click / Alt-click / Backspace (hovered) deletes
+//   drag a vertex · click a midpoint handle to add a vertex there · right-click / Alt-click / Backspace (hovered) deletes;
+//      focus then moves to the next vertex along the ring, so Backspace keeps deleting the chain (Shift+Backspace /
+//      Shift-right-click goes the other way); deleting a hole's / extra part's last vertices deletes that ring
+//   X  lasso: draw a loop (drag or clicks) and every vertex inside it is deleted
 //   R  replace a stretch: draw a path (click points, or freehand drag) from near one boundary point to near another; the
 //      shorter boundary between the two snap points is replaced. F flips to the other side.
 //   N  redraw from scratch (clicks or freehand; double-click / Enter / clicking the first point closes)
-//   A  add a part · D delete the hovered part · Ctrl/Cmd-Z undo, Shift-Ctrl/Cmd-Z (or Ctrl-Y) redo
+//   A  add a part · D delete the hovered part, or the hole under the cursor (Alt-click inside a hole too) · Ctrl/Cmd-Z undo, Shift-Ctrl/Cmd-Z (or Ctrl-Y) redo
 //   Enter / E done · Esc cancels a drawing, else leaves (twice if there are edits) · Space held: pan while drawing
 //   - / = zoom out / in
 const CAP_RING = 400, CAP_LINE = 1200, CAP_TOTAL = 4500, SNAP_PX = 26, HIT_V = 9, HIT_M = 8;
@@ -139,7 +142,7 @@ class PolyEdit {
     this.ref = clone(this.parts);    // faint reference of the starting outline
     this.start = JSON.stringify(this.parts);
     this.hist = []; this.fwd = []; this.lastReplace = null;
-    this.hover = null; this.hoverPart = -1; this.drag = null; this.draw = null; this.space = false; this.escArm = 0;
+    this.hover = null; this.hoverPart = -1; this.target = null; this.focus = null; this.drag = null; this.draw = null; this.space = false; this.escArm = 0;
     this.msg = ''; this.msgAt = 0;
     this.savedOpts = { disableDoubleClickZoom: map.get('disableDoubleClickZoom') ?? false, gestureHandling: map.get('gestureHandling') || 'auto', draggableCursor: map.get('draggableCursor') ?? null };
     map.setOptions({ disableDoubleClickZoom: true });
@@ -161,7 +164,7 @@ class PolyEdit {
     on(div, 'touchstart', e => { if (this.swallow) e.stopPropagation(); }, { capture: true, passive: true });
     on(div, 'click', e => { if (this.swallow) { e.stopPropagation(); this.swallow = false; } }, true);
     on(div, 'dblclick', e => { if (this.draw) { e.stopPropagation(); e.preventDefault(); } }, true);
-    on(div, 'contextmenu', e => { if (this.hover?.t === 'v' && !this.draw) { e.preventDefault(); e.stopPropagation(); this.delVertex(this.hover); } }, true);
+    on(div, 'contextmenu', e => { if (this.hover?.t === 'v' && !this.draw) { e.preventDefault(); e.stopPropagation(); this.delVertex(this.hover, e.shiftKey ? -1 : 1); } }, true);
     on(window, 'pointermove', e => this.onMove(e), true);
     on(window, 'pointerup', e => this.onUp(e), true);
     on(window, 'keydown', e => this.onKey(e), true);
@@ -254,9 +257,10 @@ class PolyEdit {
     // reference: the outline as it was when editing started
     const refPath = this.ref.map(p => p.map(r => d(r.map(c => this.px(P, c)), this.closed)).join('')).join('');
     if (refPath) h += `<path d="${refPath}" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1.2" stroke-dasharray="4 4"/>`;
+    const tg = this.draw ? null : this.target;
     this.scr.forEach((p, k) => {
       const path = p.map(r => d(r, this.closed)).join('');
-      const hot = k === this.hoverPart && !this.draw;
+      const hot = tg && tg.p === k && !(this.closed && tg.r > 0);
       h += `<path d="${path}" fill="${this.closed ? (hot ? 'rgba(255,226,122,.16)' : 'rgba(255,226,122,.06)') : 'none'}" fill-rule="evenodd" stroke="#000" stroke-opacity="${fade ? .2 : .6}" stroke-width="4.5"/>`;
       h += `<path d="${path}" fill="none" stroke="${hot ? '#fff3b0' : '#ffe27a'}" stroke-opacity="${fade ? .35 : 1}" stroke-width="${hot ? 2.6 : 2}"/>`;
     });
@@ -280,21 +284,40 @@ class PolyEdit {
       if (!this.tooDense) for (const [pi, ri, i] of verts) { const q = this.scr[pi][ri][i]; h += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${this.draw ? 2.5 : 4}" fill="#fff" stroke="#000" stroke-width="1.3"/>`; }
       this.vis.verts = this.tooDense ? [] : verts;
     }
+    // what a delete would remove: the hole under the cursor (D), or the ring a vertex delete would take with it
+    const label = (txt, x, y, col = '#fff') => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="system-ui,sans-serif" font-size="12" font-weight="600" fill="${col}" stroke="#000" stroke-width="3" paint-order="stroke" text-anchor="middle">${esc(txt)}</text>`;
+    const doomPath = (rings, closed) => `<path d="${rings.map(r => d(r, closed)).join('')}" fill="${closed ? 'rgba(255,80,80,.25)' : 'none'}" fill-rule="evenodd" stroke="#ff5a5a" stroke-width="3" stroke-dasharray="7 4"/>`;
+    const mid = r => { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const q of r) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); } return [(x0 + x1) / 2, (y0 + y1) / 2]; };
+    const dm = this.draw ? null : this.doomed();
+    if (dm) {
+      const hole = this.closed && dm.r > 0, rings = hole ? [this.scr[dm.p][dm.r]] : this.scr[dm.p];
+      if (dm.ok) h += doomPath(rings, this.closed);
+      const q = this.scr[dm.p][dm.r][dm.i];
+      h += label(dm.ok ? `Backspace deletes this ${hole ? 'hole' : this.closed ? 'part' : 'line'}` : 'Last outline: use N to redraw', q[0], q[1] - 16, dm.ok ? '#ff9a9a' : '#ffe27a');
+    } else if (tg && this.closed && tg.r > 0 && this.scr[tg.p]?.[tg.r]) {
+      const r = this.scr[tg.p][tg.r], c = mid(r);
+      h += doomPath([r], true) + label('D deletes this hole', c[0], c[1], '#ff9a9a');
+    }
     const hv = this.hover;
     if (hv && !this.draw) {
       const q = hv.t === 'v' ? this.scr[hv.p]?.[hv.r]?.[hv.i] : hv.q;
       if (q) h += `<circle cx="${q[0]}" cy="${q[1]}" r="${hv.t === 'v' ? 7 : 6}" fill="${hv.t === 'v' ? '#ff9f43' : '#ffe27a'}" stroke="#000" stroke-width="1.5"/>`;
     }
+    // the focused vertex (after a delete): Backspace deletes it and moves on along the ring
+    const F = this.focus, fq = F && !this.draw && !(hv && hv.t === 'v') && this.scr[F.p]?.[F.r]?.[F.i];
+    if (fq) h += `<circle cx="${fq[0]}" cy="${fq[1]}" r="12" fill="none" stroke="#4fe3ff" stroke-width="2.5"/><circle cx="${fq[0]}" cy="${fq[1]}" r="7" fill="#ff9f43" stroke="#000" stroke-width="1.5"/>`;
     // the path being drawn, with snap markers for a replacement
     if (this.draw) {
       const pts = this.draw.pts.map(c => this.px(P, c));
       if (this.draw.cursor && !this.draw.free && pts.length) pts.push(this.draw.cursor);
-      const closedPreview = this.draw.mode !== 'replace' && this.closed && pts.length > 2;
+      const lasso = this.draw.mode === 'lasso', col = lasso ? '#ff7a7a' : '#4fe3ff';
+      const closedPreview = this.draw.mode !== 'replace' && (this.closed || lasso) && pts.length > 2;
       if (pts.length) {
-        h += `<path d="${d(pts, closedPreview)}" fill="${closedPreview ? 'rgba(79,227,255,.12)' : 'none'}" stroke="#000" stroke-opacity=".6" stroke-width="4.5"/>`;
-        h += `<path d="${d(pts, closedPreview)}" fill="none" stroke="#4fe3ff" stroke-width="2.2"/>`;
-        for (const q of this.draw.pts.map(c => this.px(P, c)).slice(0, this.draw.free ? 1 : 1e9)) h += `<circle cx="${q[0]}" cy="${q[1]}" r="3.5" fill="#4fe3ff" stroke="#000"/>`;
+        h += `<path d="${d(pts, closedPreview)}" fill="${closedPreview ? (lasso ? 'rgba(255,90,90,.12)' : 'rgba(79,227,255,.12)') : 'none'}" stroke="#000" stroke-opacity=".6" stroke-width="4.5"/>`;
+        h += `<path d="${d(pts, closedPreview)}" fill="none" stroke="${col}" stroke-width="2.2"/>`;
+        for (const q of this.draw.pts.map(c => this.px(P, c)).slice(0, this.draw.free ? 1 : 1e9)) h += `<circle cx="${q[0]}" cy="${q[1]}" r="3.5" fill="${col}" stroke="#000"/>`;
       }
+      if (lasso && pts.length > 2) for (const r of this.scr.flat()) for (const q of r) if (pip(pts, q[0], q[1])) h += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="4.5" fill="#ff5a5a" stroke="#000" stroke-width="1.2"/>`;
       if (this.draw.mode === 'replace') {
         const at = this.draw.pts.length ? this.px(P, this.draw.pts[0]) : this.draw.cursor;
         const s = at && this.snap(at[0], at[1]);
@@ -330,30 +353,76 @@ class PolyEdit {
   }
 
   // ---------- history ----------
-  push() { this.hist.push(clone(this.parts)); if (this.hist.length > 200) this.hist.shift(); this.fwd = []; this.lastReplace = null; this.escArm = 0; }
-  changed() { this.dirty(); this.updateHud(); }
+  push() { this.hist.push(clone(this.parts)); if (this.hist.length > 200) this.hist.shift(); this.fwd = []; this.lastReplace = null; this.escArm = 0; this.focus = null; }
+  changed() { this.dirty(); if (this.P && this.svg) { this.render(); this.last = this.P.key + '|' + this.ver; } this.updateHud(); }  // render now so hover hit-tests never see stale screen coords
+  clearHover() { this.hover = null; this.target = null; this.hoverPart = -1; this._hk = null; }
   undo() {
     if (this.draw) { if (this.draw.pts.length && !this.draw.free) { this.draw.pts.pop(); this.changed(); return; } }
     const s = this.hist.pop(); if (!s) return this.say('Nothing to undo');
-    this.fwd.push(clone(this.parts)); this.parts = s; this.lastReplace = null; this.changed();
+    this.fwd.push(clone(this.parts)); this.parts = s; this.lastReplace = null; this.focus = null; this.clearHover(); this.changed();
   }
   redo() {
     const s = this.fwd.pop(); if (!s) return this.say('Nothing to redo');
-    this.hist.push(clone(this.parts)); this.parts = s; this.lastReplace = null; this.changed();
+    this.hist.push(clone(this.parts)); this.parts = s; this.lastReplace = null; this.focus = null; this.clearHover(); this.changed();
   }
   say(m) { this.msg = m; this.msgAt = Date.now(); this.updateHud(); clearTimeout(this._mt); this._mt = setTimeout(() => this.updateHud(), 4100); }
 
   // ---------- vertex edits ----------
-  delVertex(h) {
-    const R = this.parts[h.p]?.[h.r]; if (!R) return;
-    if (R.length <= (this.closed ? 3 : 2)) return this.say(this.parts.length > 1 || h.r > 0 ? 'Too few vertices left; D deletes the whole part' : 'Too few vertices left; N redraws from scratch');
-    this.push(); R.splice(h.i, 1); this.hover = null; this.changed();
+  // delete vertex h = {p, r, i}; focus moves to the next vertex along the ring (dir 1 = forward, -1 = backward) so
+  // Backspace keeps deleting the chain. A ring already at its minimum is deleted whole (a hole, or a part when others
+  // remain); only the feature's last outline is refused.
+  delVertex(h, dir = 1) {
+    const R = this.parts[h.p]?.[h.r]; if (!R || !R[h.i]) return;
+    if (R.length <= (this.closed ? 3 : 2)) return this.delRing(h.p, h.r, true);
+    const F = this.focus, at = F ? [F.x, F.y] : (this.mouse || [NaN, NaN]);
+    this.push(); R.splice(h.i, 1);
+    const n = R.length;
+    const i = this.closed ? (dir > 0 ? h.i % n : (h.i - 1 + n) % n) : dir > 0 ? Math.min(h.i, n - 1) : Math.max(h.i - 1, 0);
+    this.clearHover();
+    this.focus = { p: h.p, r: h.r, i, x: at[0], y: at[1] };
+    this.changed();
+  }
+  // a vertex delete on this ring would remove the whole ring: {p, r, i, ok} (ok false = it's the last outline)
+  doomed() {
+    const v = this.hover?.t === 'v' ? this.hover : this.focus; if (!v) return null;
+    const R = this.parts[v.p]?.[v.r]; if (!R || !R[v.i] || R.length > (this.closed ? 3 : 2)) return null;
+    return { p: v.p, r: v.r, i: v.i, ok: (this.closed && v.r > 0) || this.parts.length > 1 };
+  }
+  // delete ring r of part p: a hole, or (r = 0) the whole part with its holes
+  delRing(p, r, fromVertex = false) {
+    if (!this.parts[p]?.[r]) return;
+    const hole = this.closed && r > 0;
+    if (!hole && fromVertex && this.parts.length <= 1) return this.say('That would leave no outline at all: use N to redraw (or undo)');
+    this.push();
+    if (hole) this.parts[p].splice(r, 1); else this.parts.splice(p, 1);
+    this.clearHover(); this.changed();
+    this.say(hole ? 'Hole deleted (Ctrl/⌘-Z to undo)' : this.parts.length ? `${this.closed ? 'Part' : 'Line'} deleted (Ctrl/⌘-Z to undo)` : 'All parts deleted: N or A draws a new outline');
   }
   delPart() {
-    const k = this.hoverPart;
-    if (k < 0 || !this.parts[k]) return this.say('Hover over a part first, then press D');
-    this.push(); this.parts.splice(k, 1); this.hoverPart = -1; this.hover = null; this.changed();
-    this.say(this.parts.length ? 'Part deleted (Ctrl/⌘-Z to undo)' : 'All parts deleted: N or A draws a new outline');
+    const t = this.target;
+    if (!t || !this.parts[t.p]?.[t.r]) return this.say('Hover over a part or a hole first, then press D');
+    this.delRing(t.p, t.r);
+  }
+  // X lasso: delete every vertex inside the drawn loop; rings left with too few vertices go too
+  lassoDelete(pts) {
+    if (pts.length < 3) return this.say('Draw a loop around the vertices to delete (Esc cancels)');
+    const poly = pts.map(c => this.px(this.P, c)), min = this.closed ? 3 : 2, scr = this.parts.map(p => p.map(r => r.map(c => this.px(this.P, c))));
+    let nDel = 0, rings = 0, parts = 0; const out = [];
+    this.parts.forEach((p, pi) => {
+      const keep = [];
+      for (let ri = 0; ri < p.length; ri++) {
+        const k = p[ri].filter((_, i) => !pip(poly, scr[pi][ri][i][0], scr[pi][ri][i][1]));
+        nDel += p[ri].length - k.length;
+        if (k.length < min) { if (ri === 0) { parts++; return; } rings++; continue; }
+        keep.push(k.map(c => [c[0], c[1]]));
+      }
+      out.push(keep);
+    });
+    this.draw = null; this.cursor();
+    if (!nDel) { this.changed(); return this.say('No vertices inside the lasso'); }
+    if (!out.length) { this.changed(); return this.say('That would delete the whole outline: use N to redraw'); }
+    this.push(); this.parts = out; this.clearHover(); this.changed();
+    this.say(`Deleted ${nDel} vertices${rings ? ` · ${rings} hole${rings > 1 ? 's' : ''}` : ''}${parts ? ` · ${parts} part${parts > 1 ? 's' : ''}` : ''} (Ctrl/⌘-Z to undo)`);
   }
 
   // ---------- pointer ----------
@@ -368,10 +437,15 @@ class PolyEdit {
       this.draw.down = [x, y]; this.draw.cursor = [x, y];
       return;
     }
-    this.updateHover(x, y);
-    const h = this.hover; if (!h) return;
+    this.updateHover(x, y, true);
+    const h = this.hover;
+    if (e.altKey && h?.t !== 'v' && this.closed && this.target?.r > 0) {  // Alt-click inside a hole deletes it
+      e.stopPropagation(); e.preventDefault(); this.swallow = true;
+      return this.delRing(this.target.p, this.target.r);
+    }
+    if (!h) return;
     e.stopPropagation(); e.preventDefault(); this.swallow = true;
-    if (h.t === 'v' && (e.altKey)) return this.delVertex(h);
+    if (h.t === 'v' && (e.altKey)) return this.delVertex(h, e.shiftKey ? -1 : 1);
     this.push();
     let i = h.i;
     if (h.t === 'm') { i = h.i + 1; this.parts[h.p][h.r].splice(i, 0, this.ll(h.q[0], h.q[1], this.parts[h.p][h.r][h.i])); }
@@ -406,20 +480,31 @@ class PolyEdit {
     if (e.buttons) return;  // panning the map
     const r = this.div.getBoundingClientRect();
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom || e.target.closest?.('.polyedit-hud')) {
-      if (this.hover || this.hoverPart >= 0) { this.hover = null; this.hoverPart = -1; this.dirty(); this.cursor(); } return;
+      if (this.hover || this.target) { this.clearHover(); this.dirty(); this.cursor(); } return;
     }
     this.updateHover(x, y);
   }
-  updateHover(x, y) {
+  updateHover(x, y, click = false) {
+    this.mouse = [x, y];
+    // right after a delete the cursor still sits where the deleted vertex was: don't let jitter grab a neighbour
+    // (which would steal the focus) until the mouse has really moved
+    const F = this.focus, still = F && !click && Math.hypot(x - F.x, y - F.y) < 6;
     let best = null, bd = HIT_V;
-    for (const [p, r, i] of this.vis?.verts || []) { const q = this.scr[p][r][i], d = Math.hypot(q[0] - x, q[1] - y); if (d < bd) { bd = d; best = { t: 'v', p, r, i }; } }
-    if (!best) { bd = HIT_M; for (const [p, r, i, q] of this.vis?.mids || []) { const d = Math.hypot(q[0] - x, q[1] - y); if (d < bd) { bd = d; best = { t: 'm', p, r, i, q }; } } }
-    // the part under the cursor (inside it, or near its edge) for D
-    let hp = -1;
-    const s = this.snap(x, y); if (s && s.d < 10) hp = s.p;
-    else if (this.closed) this.scr?.forEach((p, k) => { if (hp < 0 && p[0] && pip(p[0], x, y) && !p.slice(1).some(h => pip(h, x, y))) hp = k; });
-    const k = JSON.stringify([best?.t, best?.p, best?.r, best?.i, hp]);
-    if (k !== this._hk) { this._hk = k; this.hover = best; this.hoverPart = hp; this.dirty(); this.cursor(); }
+    if (!still) {
+      for (const [p, r, i] of this.vis?.verts || []) { const q = this.scr[p][r][i], d = Math.hypot(q[0] - x, q[1] - y); if (d < bd) { bd = d; best = { t: 'v', p, r, i }; } }
+      if (!best) { bd = HIT_M; for (const [p, r, i, q] of this.vis?.mids || []) { const d = Math.hypot(q[0] - x, q[1] - y); if (d < bd) { bd = d; best = { t: 'm', p, r, i, q }; } } }
+    }
+    if (best?.t === 'v' && F) { this.focus = null; this._hk = null; }  // hovering another vertex re-targets
+    // what D deletes: the ring whose edge is near the cursor (a hole, or a part's outline = the part), else the part
+    // whose filled area contains the cursor, else the hole containing it (islands in a lake hole are parts themselves)
+    let tg = null;
+    const s = this.snap(x, y); if (s && s.d < 10) tg = { p: s.p, r: this.closed ? s.r : 0 };
+    else if (this.closed && this.scr) {
+      this.scr.forEach((p, k) => { if (!tg && p[0] && pip(p[0], x, y) && !p.slice(1).some(h => pip(h, x, y))) tg = { p: k, r: 0 }; });
+      if (!tg) this.scr.forEach((p, k) => { if (!tg && p[0] && pip(p[0], x, y)) { const h = p.findIndex((r, i) => i > 0 && pip(r, x, y)); if (h > 0) tg = { p: k, r: h }; } });
+    }
+    const k = JSON.stringify([best?.t, best?.p, best?.r, best?.i, tg?.p, tg?.r]);
+    if (k !== this._hk) { this._hk = k; this.hover = best; this.target = tg; this.hoverPart = tg ? tg.p : -1; this.dirty(); this.cursor(); }
   }
   onUp(e) {
     if (this.drag) {
@@ -442,7 +527,7 @@ class PolyEdit {
       const now = Date.now(), pts = Dw.pts;
       if (pts.length) {
         const f = this.px(this.P, pts[0]), l = this.px(this.P, pts[pts.length - 1]);
-        if (Dw.mode !== 'replace' && this.closed && pts.length >= 3 && Math.hypot(x - f[0], y - f[1]) < 10) return this.finishDraw();
+        if (Dw.mode !== 'replace' && (this.closed || Dw.mode === 'lasso') && pts.length >= 3 && Math.hypot(x - f[0], y - f[1]) < 10) return this.finishDraw();
         if (now - (Dw.lastClick || 0) < 350 && Math.hypot(x - l[0], y - l[1]) < 8) return this.finishDraw();
       }
       Dw.lastClick = now;
@@ -455,8 +540,9 @@ class PolyEdit {
   startDraw(mode) {
     if (this.drag) return;
     if (mode === 'replace' && !this.parts.length) mode = 'redraw';
+    if (mode === 'lasso' && !this.parts.length) return this.say('Nothing to delete yet');
     this.draw = { mode, pts: [], free: false, down: null, cursor: null };
-    this.hover = null; this.hoverPart = -1; this.escArm = 0;
+    this.clearHover(); this.focus = null; this.escArm = 0;
     this.changed(); this.cursor();
   }
   cancelDraw() { this.draw = null; this.changed(); this.cursor(); }
@@ -464,6 +550,7 @@ class PolyEdit {
     const Dw = this.draw; if (!Dw) return;
     const pts = Dw.pts;
     if (Dw.mode === 'replace') return this.replace(pts);
+    if (Dw.mode === 'lasso') return this.lassoDelete(pts);
     const need = this.closed ? 3 : 2;
     if (pts.length < need) return this.say(`Draw at least ${need} points (${Dw.mode === 'redraw' ? 'Esc cancels' : 'Esc cancels'})`);
     this.push();
@@ -549,14 +636,15 @@ class PolyEdit {
     else if (k === 'Enter') this.action(this.draw ? 'finish' : 'done');
     else if (k === 'Backspace' || k === 'Delete') {
       if (this.draw) { if (this.draw.pts.length) { this.draw.pts.pop(); this.changed(); } }
-      else if (this.hover?.t === 'v') this.delVertex(this.hover);
-      else this.say('Hover over a vertex to delete it');
+      else if (this.hover?.t === 'v' || this.focus) this.delVertex(this.hover?.t === 'v' ? this.hover : this.focus, e.shiftKey ? -1 : 1);
+      else this.say('Hover over a vertex to delete it (X lassoes many)');
     }
     else if (lk === 'r') this.action('replace');
     else if (lk === 'n') this.action('redraw');
     else if (lk === 'a') this.action('part');
     else if (lk === 'd') this.action('delpart');
     else if (lk === 'f') this.action('flip');
+    else if (lk === 'x') this.action('lasso');
     else if (lk === 'e') this.action('done');
     else if (k === '-' || k === '_') this.map.setZoom(this.map.getZoom() - 1);
     else if (k === '=' || k === '+') this.map.setZoom(this.map.getZoom() + 1);
@@ -571,6 +659,7 @@ class PolyEdit {
     else if (a === 'replace') this.draw?.mode === 'replace' ? this.cancelDraw() : this.startDraw('replace');
     else if (a === 'redraw') this.draw?.mode === 'redraw' ? this.cancelDraw() : this.startDraw('redraw');
     else if (a === 'part') this.draw?.mode === 'part' ? this.cancelDraw() : this.startDraw('part');
+    else if (a === 'lasso') this.draw?.mode === 'lasso' ? this.cancelDraw() : this.startDraw('lasso');
     else if (a === 'delpart') this.delPart();
     else if (a === 'flip') this.flip();
     else if (a === 'finish') this.finishDraw();
@@ -581,7 +670,7 @@ class PolyEdit {
     }
     else if (a === 'cancel') this.close(false);
     else if (a === 'done') {
-      if (this.draw) { if (this.draw.pts.length >= (this.draw.mode === 'replace' ? 2 : this.closed ? 3 : 2)) this.finishDraw(); else this.cancelDraw(); if (this.draw) return; }
+      if (this.draw) { if (this.draw.mode !== 'lasso' && this.draw.pts.length >= (this.draw.mode === 'replace' ? 2 : this.closed ? 3 : 2)) this.finishDraw(); else this.cancelDraw(); if (this.draw) return; }
       if (this.isChanged() && !this.count()) return this.say('The outline is empty: draw one (N) or undo');
       if (this.isChanged() && this.crosses && !this.crossOk) { this.crossOk = true; return this.say('⚠ The outline crosses itself. Press Done again to keep it anyway.'); }
       this.close(true);
@@ -614,10 +703,12 @@ class PolyEdit {
     if (!this.crosses) this.crossOk = false;
     const n = this.count(), Dw = this.draw;
     const b = (a, label, title, on) => `<button data-a="${a}" title="${esc(title)}" style="padding:4px 8px;font-size:12px${on ? ';background:#4fe3ff;color:#001a2c' : ''}">${label}</button>`;
-    const help = Dw ? (Dw.mode === 'replace'
+    const help = Dw ? Dw.mode === 'lasso'
+        ? 'Lasso delete: drag a loop (or click points; Enter / click the first point closes) around the vertices to delete. Esc cancels.'
+        : (Dw.mode === 'replace'
         ? 'Replace a stretch: click points or drag freehand, starting near the outline and ending near it again. Enter finishes a clicked path; Backspace removes the last point; Space+drag pans; Esc cancels.'
         : `${Dw.mode === 'redraw' ? 'Redraw from scratch' : 'New part'}: click points or drag freehand. ${this.closed ? 'Click the first point, double-click or Enter to close.' : 'Double-click or Enter to finish.'} Backspace removes the last point; Space+drag pans; Esc cancels.`)
-      : 'Drag vertices · click a small dot to add one · right-click / Alt-click / Backspace deletes · <b>R</b> replace a stretch · <b>N</b> redraw · <b>A</b> add part · <b>D</b> delete hovered part · Ctrl/⌘-Z undo, ⇧ redo · <b>Enter</b> done · <b>Esc</b> leave';
+      : 'Drag vertices · click a small dot to add one · right-click / Alt-click / Backspace deletes (keep pressing Backspace to delete onward, ⇧ the other way) · <b>X</b> lasso-delete · <b>R</b> replace a stretch · <b>N</b> redraw · <b>A</b> add part · <b>D</b> delete hovered part or hole · Ctrl/⌘-Z undo, ⇧ redo · <b>Enter</b> done · <b>Esc</b> leave';
     const msg = Date.now() - this.msgAt < 4000 ? this.msg : '';
     this.hud.innerHTML = `<div class="row" style="gap:6px"><b>✎ Editing${this.title ? ': ' + esc(this.title) : ''}</b>
       <span class="muted small grow">${n.toLocaleString()} vertices${this.parts.length > 1 ? ` · ${this.parts.length} parts` : ''}${this.origVertices > n && this.tolM ? ` · simplified from ${this.origVertices.toLocaleString()} (≤ ${this.tolM < 1000 ? Math.round(this.tolM) + ' m' : (this.tolM / 1000).toFixed(1) + ' km'}${this.dropped ? `; ${this.dropped} tiny ring${this.dropped > 1 ? 's' : ''} dropped` : ''})` : ''}${this.tooDense ? ' · zoom in to see vertices' : ''}</span>
@@ -628,7 +719,8 @@ class PolyEdit {
         ${b('replace', 'Replace (R)', 'Replace a stretch of the boundary with a drawn path', Dw?.mode === 'replace')}
         ${b('redraw', 'Redraw (N)', 'Scrap the outline and draw it anew', Dw?.mode === 'redraw')}
         ${b('part', 'Add part (A)', 'Draw another part', Dw?.mode === 'part')}
-        ${b('delpart', 'Delete part (D)', 'Delete the part under the cursor')}
+        ${b('delpart', 'Delete part (D)', 'Delete the part (or hole) under the cursor')}
+        ${b('lasso', 'Lasso (X)', 'Delete every vertex inside a drawn loop', Dw?.mode === 'lasso')}
         ${this.lastReplace ? b('flip', 'Flip (F)', 'Replace the other side instead') : ''}
         <span class="grow"></span>${b('cancel', 'Cancel', 'Discard the edits (Esc)')}<button data-a="done" class="primary" style="padding:4px 10px;font-size:12px" title="Keep the edited outline (Enter)">${esc(this.doneLabel)}</button></div>`;
   }

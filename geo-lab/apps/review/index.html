@@ -32,7 +32,9 @@
   .mem .nm { font-weight: 600; }
   .mem .sub { color: var(--muted); font-size: 12px; }
   .mem .vis { color: #c9b98a; font-size: 11.5px; margin-top: 2px; }
-  .mem a { color: #9fd8ff; text-decoration: none; }
+  .mem a, .grp a { color: #9fd8ff; text-decoration: none; }
+  .grp { margin-top: 10px; padding: 6px 7px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+  .grp summary { cursor: pointer; }
   .sc { font-variant-numeric: tabular-nums; font-weight: 600; }
   .sc.hi { color: var(--yes); } .sc.mid { color: var(--maybe); } .sc.lo { color: var(--muted); }
   #foot { border-top: 1px solid var(--line); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); display: grid; gap: 8px; }
@@ -94,6 +96,7 @@
       <label title="Minimum blob score (area-weighted edge contrast; blank = include unmeasured)">score ≥ <input id="fMin" type="number" step="1" min="0" placeholder="any"></label>
       <select id="fSort" title="Order"><option value="size">biggest first</option><option value="score">best score first</option></select>
       <label title="Skip blobs you've already gavelled"><input id="fUnrev" type="checkbox" checked> unreviewed</label>
+      <label title="Also show blobs made only of paper/umbrella designations (biosphere reserves, transfrontier areas, Ramsar sites, hunting areas, APAs…); they sort last"><input id="fUmb" type="checkbox"> umbrella</label>
     </div>
   </div>
   <div id="body">
@@ -132,12 +135,13 @@ const VERDICTS = { y: 'yes', n: 'no', m: 'maybe', f: 'fix' };
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+let hints = {};
 let map, gm, index = [], byId = new Map(), regionData = {}, regionLoading = {}, list = [], pos = 0;
 let curGeom = null, pending = null, pendingShapes = [];  // blob outline as GeoJSON; an edited outline awaiting its "fix" verdict
 let shapes = [], ctxShapes = [], memberPolys = [], fitZoom = null, zoomedOut = false, armed = null, hlRef = null, scale = 1e4;
 const verdicts = (() => { try { return JSON.parse(localStorage.getItem(VKEY) || '{}'); } catch { return {}; } })();
 const saveVerdicts = () => { try { localStorage.setItem(VKEY, JSON.stringify(verdicts)); } catch {} };
-const st = Object.assign({ region: '', min: '', unrev: true, id: null, labels: false, sort: 'size' },
+const st = Object.assign({ region: '', min: '', unrev: true, id: null, labels: false, sort: 'size', umb: false },
   (() => { try { return JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { return {}; } })());
 const saveState = () => { try { localStorage.setItem(SKEY, JSON.stringify(st)); } catch {} };
 
@@ -158,10 +162,11 @@ function loadRegion(r) {
 function rebuild(keepId) {
   const min = st.min === '' ? null : +st.min;
   list = index.filter(b => (!st.region || b.region === st.region) && (min === null || (b.rank ?? -1) >= min)
-    && (!st.unrev || !verdicts[b.id] || b.id === keepId));
+    && (!st.unrev || !verdicts[b.id] || b.id === keepId) && (st.umb || !b.umb || b.id === keepId));
   // biggest blobs first by default (owner, 2026-10-12): the big decisions first, the long tail of small reserves later
-  if (st.sort === 'size') list.sort((a, b) => (b.km2 || 0) - (a.km2 || 0));
-  else list.sort((a, b) => (b.rank ?? -1) - (a.rank ?? -1) || (b.km2 || 0) - (a.km2 || 0));
+  // umbrella-only blobs (paper designations) always after the real reserves
+  if (st.sort === 'size') list.sort((a, b) => (a.umb || 0) - (b.umb || 0) || (b.km2 || 0) - (a.km2 || 0));
+  else list.sort((a, b) => (a.umb || 0) - (b.umb || 0) || (b.rank ?? -1) - (a.rank ?? -1) || (b.km2 || 0) - (a.km2 || 0));
   pos = Math.max(0, keepId ? list.findIndex(b => b.id === keepId) : 0);
   if (pos < 0) pos = 0;
 }
@@ -198,7 +203,7 @@ async function show(i) {
   const v = verdicts[b.id];
   $('title').innerHTML = `${esc(b.name)}${v ? ` <span class="prev v-${v.v}">${v.v}</span>` : ''}`;
   $('meta').innerHTML = `${esc(b.country)} · ${{ africa: 'Africa', asia: 'S/SE Asia', samerica: 'S. America' }[b.region] || b.region} · <b>${fmtArea(b.km2)}</b>
-    · score <span class="sc ${scoreCls(b.rank)}" title="area-weighted member score, mostly-water members ignored (sort key)">${fmtScore(b.rank)}</span> (best ${fmtScore(b.score)}) · ${b.n} member${b.n > 1 ? 's' : ''}${v?.note ? `<br>your note: <i>${esc(v.note)}</i>` : ''}`;
+    · score <span class="sc ${scoreCls(b.rank)}" title="area-weighted member score, mostly-water members ignored (sort key)">${fmtScore(b.rank)}</span> (best ${fmtScore(b.score)}) · ${b.n} member${b.n > 1 ? 's' : ''}${v?.note ? `<br>your note: <i>${esc(v.note)}</i>` : ''}${(hints[b.id] || []).map(h => `<br>earlier, on a smaller piece (${esc(h.id)}): <b>${esc(h.v)}</b>${h.note ? ` <i>${esc(h.note)}</i>` : ''}`).join('')}`;
   $('note').value = v?.note || '';
   setArmed(null);
   for (const btn of document.querySelectorAll('#verdicts button')) btn.classList.toggle('cur', btn.dataset.v === v?.v);
@@ -250,10 +255,31 @@ function draw(b, d) {
     const wl = wikiLink(m.wiki);
     return `<div class="mem" data-ref="${esc(m.ref)}">
       <div class="row" style="gap:6px"><span class="nm grow">${esc(m.name)}</span><span class="sc ${scoreCls(Math.max(m.score ?? -1, m.gscore ?? -1) < 0 ? null : Math.max(m.score ?? -1, m.gscore ?? -1))}" title="EOX score${m.gscore != null ? ' / Google score' : ''}">${fmtScore(m.score)}${m.gscore != null ? ` / G ${fmtScore(m.gscore)}` : ''}</span></div>
-      <div class="sub">${esc(m.desig)}${m.year ? ` · ${m.year}` : ''} · ${fmtArea(m.km2)} · <a href="${refLink(m.ref)}" target="_blank" rel="noopener">${esc(m.ref)}</a>${(m.alt || []).map(r => ` · <a href="${refLink(r)}" target="_blank" rel="noopener">${esc(r)}</a>`).join('')}${wl ? ` · <a href="${wl}" target="_blank" rel="noopener">wiki</a>` : ''}</div>
+      <div class="sub">${m.umb ? '<span class="tag" title="paper/umbrella designation: never glues neighbours into this blob">umbrella</span> ' : ''}${esc(m.desig)}${m.year ? ` · ${m.year}` : ''} · ${fmtArea(m.km2)} · <a href="${refLink(m.ref)}" target="_blank" rel="noopener">${esc(m.ref)}</a>${(m.alt || []).map(r => ` · <a href="${refLink(r)}" target="_blank" rel="noopener">${esc(r)}</a>`).join('')}${wl ? ` · <a href="${wl}" target="_blank" rel="noopener">wiki</a>` : ''}</div>
       ${m.vis ? `<div class="vis">👁 ${esc(m.vis)}</div>` : ''}</div>`;
-  }).join('');
+  }).join('') + groupingHtml(d);
 }
+
+// why this blob is grouped the way it is (make_queue.py: neighbours merge when the shared border is invisible on EOX)
+function groupingHtml(d) {
+  const nm = Object.fromEntries(d.members.map(m => [m.ref, m.name]));
+  const de = x => x === -1 ? 'nested/overlapping' : x == null ? 'border not measurable' : `border step ${(+x).toFixed(1)}`;
+  const merged = (d.merged || []).map(([a, b, x]) => `<div>${esc(nm[a] || a)} + ${esc(nm[b] || b)} <span class="muted">· ${de(x)}</span></div>`);
+  const why = { visible: 'border visible', umbrella: 'umbrella designation', tiled: 'block too large, tiled' };
+  const split = (d.split || []).map(([mine, ref, name, blob, x, r]) => `<div>${esc(name)} <span class="muted">(next to ${esc(nm[mine] || mine)}) · ${why[r] || r}${r === 'visible' ? ` (step ${(+x).toFixed(1)})` : ''}</span>
+      · <a href="#" data-goto="${esc(blob)}">open</a></div>`);
+  if (!merged.length && !split.length) return '';
+  return `<details class="grp small" ${split.length && !merged.length ? '' : ''}><summary class="muted">Grouping: ${merged.length} merged border${merged.length === 1 ? '' : 's'}, ${split.length} neighbour${split.length === 1 ? '' : 's'} split off</summary>
+    ${merged.length ? `<div class="muted" style="margin-top:4px">Merged (border invisible on Sentinel-2, step &lt; 3.5):</div>${merged.join('')}` : ''}
+    ${split.length ? `<div class="muted" style="margin-top:4px">Split off:</div>${split.join('')}` : ''}</details>`;
+}
+$('members').addEventListener('click', e => {
+  const a = e.target.closest('a[data-goto]'); if (!a) return;
+  e.preventDefault(); e.stopPropagation();
+  const id = a.dataset.goto; let i = list.findIndex(b => b.id === id);
+  if (i < 0 && byId.has(id)) { list.splice(pos + 1, 0, byId.get(id)); i = pos + 1; }  // outside the filter: slot it in next
+  if (i >= 0) show(i);
+}, true);
 
 // other queue blobs in view: thin dashed white, coloured by your verdict if any
 function drawContext(cur) {
@@ -400,13 +426,14 @@ addEventListener('keydown', e => {
 });
 
 // ---------- filters ----------
-$('fRegion').value = st.region; $('fMin').value = st.min; $('fUnrev').checked = st.unrev; $('fSort').value = st.sort || 'size';
+$('fRegion').value = st.region; $('fMin').value = st.min; $('fUnrev').checked = st.unrev; $('fUmb').checked = !!st.umb; $('fSort').value = st.sort || 'size';
 const onFilter = () => {
-  st.region = $('fRegion').value; st.min = $('fMin').value.trim(); st.unrev = $('fUnrev').checked; st.sort = $('fSort').value; saveState();
+  st.region = $('fRegion').value; st.min = $('fMin').value.trim(); st.unrev = $('fUnrev').checked; st.sort = $('fSort').value; st.umb = $('fUmb').checked; saveState();
   const cur = list[pos]?.id; rebuild(cur); if (list[pos]?.id !== cur) pos = 0; show(pos);
-  $('fRegion').blur(); $('fUnrev').blur();
+  $('fRegion').blur(); $('fUnrev').blur(); $('fUmb').blur();
 };
-$('fRegion').onchange = onFilter; $('fUnrev').onchange = onFilter; $('fSort').onchange = () => { $('fSort').blur(); onFilter(); pos = 0; show(0); };  // new order: start from its top $('fMin').onchange = onFilter;
+$('fRegion').onchange = onFilter; $('fUnrev').onchange = onFilter; $('fSort').onchange = () => { $('fSort').blur(); onFilter(); pos = 0; show(0); };  // new order: start from its top
+$('fMin').onchange = onFilter; $('fUmb').onchange = onFilter;
 $('fMin').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('fMin').blur(); } });
 
 // ---------- who ----------
@@ -425,6 +452,21 @@ async function main() {
   let idx;
   [gm, idx] = await Promise.all([loadMaps(), loadJSON(DATA + 'protected_queue.json')]);
   index = idx.blobs; index.forEach(b => byId.set(b.id, b));
+  // regrouping retires blob ids: carry verdicts given under an old id to the blob that now holds its largest member
+  let carried = 0;
+  for (const [o, n] of Object.entries(idx.meta?.id_map || {})) {
+    const v = verdicts[o];
+    if (v && n && byId.has(n) && (!verdicts[n] || (verdicts[n].ts || '') < (v.ts || ''))) { verdicts[n] = { ...v, carried_from: o }; carried++; }
+  }
+  // earlier verdicts on a piece of a now much larger merged blob: shown as a hint, the merged blob stays unreviewed
+  hints = {};
+  for (const [o, n] of Object.entries(idx.meta?.grown || {})) if (verdicts[o]) (hints[n] ||= []).push({ ...verdicts[o], id: o });
+  // owner-requested re-reviews (data/review/protected_reset.json): drop verdicts given before this queue build
+  const built = idx.meta?.built ? new Date(idx.meta.built).toISOString() : '';
+  for (const id of Object.keys(idx.meta?.reset || {})) {
+    if (verdicts[id] && (verdicts[id].ts || '') < built) { delete verdicts[id]; carried++; }
+  }
+  if (carried) { saveVerdicts(); console.log('carried', carried, 'verdicts to regrouped blobs'); }
   map = new gm.Map($('map'), {
     center: { lat: 0, lng: 20 }, zoom: 4, mapTypeId: st.labels ? 'hybrid' : 'satellite', tilt: 0,
     disableDefaultUI: true, scaleControl: true, gestureHandling: 'greedy', clickableIcons: false,
