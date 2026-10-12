@@ -152,7 +152,7 @@ async function main() {
     f.curated = !String(f.src || '').startsWith('ne:');
     f._search = [f.name, ...(f.aka || [])].join(' | ').toLowerCase();
     f._kind = !f.geometry ? 'pt' : /Line/.test(f.geometry.type) ? 'line' : 'area';
-    if (f._kind === 'line') f._anchors = lineAnchors(f.geometry, 16);
+    if (f._kind === 'line') { f._anchors = lineAnchors(f.geometry, 16); if (f.seg_vz) f._runs = buildRuns(f); }
   }
   const start = parseHash() || { lat: 25, lng: 20, z: 3 };
   map = new gm.Map($('map'), {
@@ -161,7 +161,12 @@ async function main() {
     isFractionalZoomEnabled: true, minZoom: 2, backgroundColor: '#000',
     zoomControl: true, zoomControlOptions: { position: gm.ControlPosition.RIGHT_CENTER },
   });
-  window.__geo = { map };  // debugging / headless tests
+  window.__geo = { map, perf: (n = 20) => {  // debugging / headless tests: ms per visibleCandidates() call
+    const b = map.getBounds(), ne = b.getNorthEast(), sw = b.getSouthWest(), z = map.getZoom();
+    const view = { n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng(), center: map.getCenter().toJSON() };
+    const t0 = performance.now(); let r; for (let i = 0; i < n; i++) r = visibleCandidates(z, view);
+    return { ms: +((performance.now() - t0) / n).toFixed(2), candidates: r.length, rivers: r.filter(c => c.rv).map(c => c.f.name) };
+  }, anchor: id => { const f = features.find(x => x.id === id), i = f?._lastAnchor; return i == null ? null : [f._V[i][1], f._V[i][0], f._runs[f._runOf[i]].vz]; } };
   layer = makeLabelLayer(gm);
   layer.setMap(map);
   map.addListener('idle', () => { writeHash(); updateZoomInfo(); updateContext(); if (!$('fb').classList.contains('hidden')) fbRefresh(); });
@@ -233,6 +238,76 @@ function labelAnchor(f, view) {
 }
 const lngIn = (lng, v) => v.w <= v.e ? lng >= v.w && lng <= v.e : lng >= v.w || lng <= v.e;
 
+// ---------- per-stretch river prominence ----------
+// build.py gives each river seg_vz = [[first vertex index, vis_zoom], ...] over its flattened vertex list (from
+// tools/river_profile.py: SWORD channel width + EOX contrast). A river is labelled when a stretch *in view* is
+// prominent enough, and its label sits on the most prominent in-view stretch near the view centre.
+const SEG_K = 0.8;  // build.py: levels later per halving of a stretch's visible width (local width below)
+function buildRuns(f) {
+  const g = f.geometry, V = [];
+  for (const l of (g.type === 'LineString' ? [g.coordinates] : g.coordinates)) for (const c of l) V.push(c);
+  f._V = V;
+  const cum = [0];
+  for (let i = 1; i < V.length; i++) cum.push(cum[i - 1] + haversineKm({ lat: V[i - 1][1], lng: V[i - 1][0] }, { lat: V[i][1], lng: V[i][0] }));
+  f._cum = cum;
+  const runs = f.seg_vz.map(([i0, vz], k) => {
+    const i1 = k + 1 < f.seg_vz.length ? f.seg_vz[k + 1][0] : V.length - 1;
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = i0; i <= i1; i++) { const [x, y] = V[i]; b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); }
+    return { i0, i1, vz, bbox: b, w: riverWidthKm(f) * 2 ** (-(vz - f.vis_zoom) / SEG_K) };
+  });
+  f._runOf = new Int32Array(V.length);
+  runs.forEach((r, k) => { for (let i = r.i0; i <= r.i1; i++) f._runOf[i] = k; });
+  return runs;
+}
+const boxInView = (b, v) => !(b[3] < v.s || b[1] > v.n) && !(v.w <= v.e ? (b[2] < v.w || b[0] > v.e) : (b[0] > v.e && b[2] < v.w));
+// in-view stretches and the lowest vis_zoom among them (null: no stretch in view)
+function runsInView(f, view) {
+  let eff = Infinity;
+  const rs = [];
+  for (const r of f._runs) if (boxInView(r.bbox, view)) { rs.push(r); if (r.vz < eff) eff = r.vz; }
+  return rs.length ? { rs, eff } : null;
+}
+// local visible width (km) at flattened vertex i (rivers without seg_vz: the feature's typical width)
+const localWidthKm = (f, i) => f._runs && i >= 0 ? f._runs[f._runOf[i]].w : riverWidthKm(f);
+
+// Label spot on a river with stretches: candidates are vertices of in-view stretches (spaced ~45 px apart so the
+// choice doesn't depend on vertex density), inside the view with room for the text; score = how much later than the
+// view's best stretch the candidate's stretch shows (below the current zoom all qualifying stretches count alike)
+// plus distance from the view centre. The previous spot is kept while it stays valid and nearly as good, so small
+// pans don't make the label hop.
+function riverAnchor(f, view, z, rv, labelFrac) {
+  const W = (view.e - view.w + 360) % 360 || 360, H = view.n - view.s;
+  const x0 = 0.02, x1 = 1 - Math.min(0.45, labelFrac) - 0.01, y0 = 0.06, y1 = 0.94;
+  const mpp = metersPerPx(view.center.lat, z), stepKm = 45 * mpp / 1000;
+  const floor = Math.max(rv.eff, z - 1);
+  const V = f._V;
+  const score = (i, vz) => {
+    const [lng, lat] = V[i];
+    const fx = ((lng - view.w + 360) % 360) / W, fy = (view.n - lat) / H;
+    if (fx < x0 || fx > x1 || fy < y0 || fy > y1) return Infinity;
+    const dc = Math.hypot((fx - 0.5) / 0.5, (fy - 0.5) / 0.5) / Math.SQRT2;
+    return 2 * Math.max(0, vz - floor) + 1.2 * dc;
+  };
+  let best = null, bs = Infinity;
+  for (const r of rv.rs) {
+    let last = -Infinity;
+    for (let i = r.i0; i <= r.i1; i++) {
+      if (f._cum[i] - last < stepKm) continue;
+      last = f._cum[i];
+      const sc = score(i, r.vz);
+      if (sc < bs) { bs = sc; best = i; }
+    }
+  }
+  const prev = f._lastAnchor;
+  if (prev != null && prev < V.length) {
+    const vz = f._runs[f._runOf[prev]].vz;
+    const ps = score(prev, vz);
+    if (ps < Infinity && vz <= Math.max(z, rv.eff) + 1e-6 && ps <= bs + 0.6) best = prev;
+  }
+  return best == null ? null : { lat: V[best][1], lng: V[best][0], i: best };
+}
+
 // Typical visible width when a river has no width_km yet (by salience).
 const riverWidthKm = f => f.width_km || [0.3, 0.3, 0.6, 1.5, 3, 5][Math.max(0, Math.min(5, f.salience))];
 
@@ -261,16 +336,21 @@ function visibleCandidates(z, view) {
     const mpp = metersPerPx(f.lat, z);
     const sizePx = f.extent_km * 1000 / mpp;
     const sel = f === state.selected;
-    const sticky = shownAt.has(f.id) && shownAt.get(f.id) <= z + 1e-6;
+    // rivers with stretches: only the stretches in view count (the Nile isn't labelled from its Sudd reach at z5)
+    const rv = f._runs ? runsInView(f, view) : null;
+    if (f._runs && !rv) continue;
+    const vis = rv ? rv.eff : f.vis_zoom;
+    // a shown river stays while some in-view stretch is within 0.75 levels (hysteresis), not on any pan
+    const sticky = shownAt.has(f.id) && shownAt.get(f.id) <= z + 1e-6 && (!rv || rv.eff <= z + 0.75);
     let established = 0;  // how long it has qualified: long-qualified big features beat ones that barely made it
     if (sticky) {
       // already on screen from a lower zoom: keep it (subject only to the too-big rule below)
-    } else if (f.vis_zoom != null) {
+    } else if (vis != null) {
       // Measured prominence: the zoom where it starts to stand out.
-      const gap = f.vis_zoom + densityShift + (f.curated ? 0 : 0.5) - z;
+      const gap = vis + densityShift + (f.curated ? 0 : 0.5) - z;
       established = Math.min(3, Math.max(0, -gap));
       if (gap > 0 && !sel) {
-        if (gap <= MAX_EARLY && f.curated && !f.marine && sizePx < 3.5 * diag) nearMiss.push({ f, sizePx, gap });
+        if (gap <= MAX_EARLY && f.curated && !f.marine && sizePx < 3.5 * diag) nearMiss.push({ f, sizePx, gap, rv });
         continue;
       }
     } else if (f._kind === 'line') {
@@ -285,26 +365,31 @@ function visibleCandidates(z, view) {
     if (f._kind !== 'line' && sizePx > (f._kind === 'area' ? 7 : 3.5) * diag && !sel) continue;
     // size priority: rivers by visible width, not length (a long river's edge anchor was culling Lake Baikal);
     // areas filling the screen are context, not the subject
-    const sizePrio = f._kind === 'line' ? Math.min(12, Math.log2(Math.max(1, riverWidthKm(f) * 1000 / mpp) * 40))
+    const wKm = rv ? riverWidthKm(f) * 2 ** (-(rv.eff - f.vis_zoom) / SEG_K) : riverWidthKm(f);
+    const sizePrio = f._kind === 'line' ? Math.min(12, Math.log2(Math.max(1, wKm * 1000 / mpp) * 40))
       : Math.min(12, Math.log2(sizePx)) - (f._kind === 'area' && sizePx > 1.5 * diag ? 8 : 0);
-    out.push({ f, sizePx, prio: (sel ? 1e6 : 0) + (sticky ? 6 : 0) + 3 * established + f.salience * 10 + (f.curated ? 8 : 0) + sizePrio });
+    out.push({ f, sizePx, rv, prio: (sel ? 1e6 : 0) + (sticky ? 6 : 0) + 3 * established + f.salience * 10 + (f.curated ? 8 : 0) + sizePrio });
   }
   // Sparse view: show the features that come closest to qualifying, so wide empty
   // stretches still say *something* about what's there.
   // Big empty patches of screen: each empty ninth of the view shows its most prominent feature (closest to
   // qualifying, then most salient), so a bright salt lake in otherwise blank steppe still gets a name.
-  const cellOf = f => {
+  const cellOf = c => {
+    const f = c.pt || c.f;
     if (f.lat < view.s || f.lat > view.n || !lngIn(f.lng, view)) return -1;
     const span = (view.e - view.w + 360) % 360 || 360;
     const cx = Math.min(2, Math.floor(((f.lng - view.w + 360) % 360) / span * 3));
     const cy = Math.min(2, Math.floor((view.n - f.lat) / (view.n - view.s) * 3));
     return cy * 3 + cx;
   };
-  const filled = new Set(out.map(c => cellOf(c.f)).filter(c => c >= 0));
+  // river labels sit on their in-view stretch, not at the feature's point
+  for (const c of out) if (c.rv) c.pt = riverAnchor(c.f, view, z, c.rv, labelFrac(c.f));
+  const filled = new Set(out.map(cellOf).filter(c => c >= 0));
   nearMiss.sort((a, b) => (a.gap - b.f.salience * 0.4) - (b.gap - a.f.salience * 0.4));
   let extra = 0;
   for (const c of nearMiss) {
-    const cell = cellOf(c.f);
+    if (c.rv && !(c.pt = riverAnchor(c.f, view, z, c.rv, labelFrac(c.f)))) continue;
+    const cell = cellOf(c);
     // fill only with things nearly visible: far-off fill labels were invisible (Udachnaya, Yakutsk at z6), and
     // rivers fill badly (a hairline label in an empty view), so they must be within half a level
     const maxGap = c.f._kind === 'line' ? 0.5 : 1.5;
@@ -312,11 +397,13 @@ function visibleCandidates(z, view) {
     const needMin = out.length + extra < MIN_LABELS && c.gap <= Math.min(1.75, maxGap);
     if (!needFill && !needMin) continue;
     if (cell >= 0) filled.add(cell);
-    out.push({ f: c.f, sizePx: c.sizePx, faint: true, prio: c.f.salience * 10 - c.gap * 10 });
+    out.push({ f: c.f, sizePx: c.sizePx, rv: c.rv, pt: c.pt, faint: true, prio: c.f.salience * 10 - c.gap * 10 });
     extra++;
   }
-  return out.sort((a, b) => b.prio - a.prio);
+  return out.filter(c => !c.rv || c.pt).sort((a, b) => b.prio - a.prio);
 }
+const labelFont = f => f.salience >= 5 ? 15 : f.salience === 4 ? 14 : f.salience === 3 ? 13 : f.salience === 2 ? 12 : 11;
+const labelFrac = f => (f.name.length * labelFont(f) * 0.58 + 18) / (map.getDiv().clientWidth || 1300);
 
 function drawLabels(L) {
   if (!L.div) return;
@@ -327,18 +414,18 @@ function drawLabels(L) {
   const view = { n: ne.lat(), s: sw.lat(), e: ne.lng(), w: sw.lng(), center: map.getCenter().toJSON() };
   const z = map.getZoom();
   const boxes = [], frag = [];
-  for (const { f, faint } of visibleCandidates(z, view)) {
+  for (const { f, faint, pt } of visibleCandidates(z, view)) {
     if (frag.length > 140) break;
-    const a = labelAnchor(f, view);
+    const a = pt || labelAnchor(f, view);
     if (!a) continue;
     const p = proj.fromLatLngToDivPixel(new google.maps.LatLng(a.lat, a.lng));
-    const fs = f.salience >= 5 ? 15 : f.salience === 4 ? 14 : f.salience === 3 ? 13 : f.salience === 2 ? 12 : 11;
+    const fs = labelFont(f);
     const w = f.name.length * fs * 0.58 + 18, h = fs + 6;
     const isPt = f._kind !== 'area';  // points and rivers: dot on the spot, text to the right
     const box = isPt ? [p.x - 6, p.y - h / 2, p.x + w - 6, p.y + h / 2] : [p.x - w / 2, p.y - h / 2, p.x + w / 2, p.y + h / 2];
     if (boxes.some(o => box[0] < o[2] && box[2] > o[0] && box[1] < o[3] && box[3] > o[1])) continue;
     boxes.push(box);
-    frag.push({ f, p, faint });
+    frag.push({ f, p, faint, a });
   }
   const used = new Set();
   for (const { f, p, faint } of frag) {
@@ -361,7 +448,8 @@ function drawLabels(L) {
   }
   for (const [id, el] of L.pool) if (!used.has(id) && el.parentNode) el.remove();
   const next = new Map();
-  for (const { f } of frag) next.set(f.id, Math.min(shownAt.get(f.id) ?? z, z));
+  for (const { f, a } of frag) { next.set(f.id, Math.min(shownAt.get(f.id) ?? z, z)); if (f._runs) f._lastAnchor = a.i; }
+  for (const f of features) if (f._runs && !next.has(f.id)) f._lastAnchor = null;
   shownAt = next;
 }
 const redraw = () => layer && scheduleDraw(layer);
@@ -483,20 +571,23 @@ function showInfo(f) {
 }
 
 // Distance (km) from p to a LineString/MultiLineString, local equirectangular approximation.
-function distToLineKm(p, g) {
+// distance (km) from p to a line, and the flattened index of the nearest segment's first vertex
+function distToLine(p, g) {
   const k = Math.cos(p.lat * Math.PI / 180) * 111.32, m = 111.32;
   const lines = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
-  let best = Infinity;
-  for (const l of lines) for (let i = 1; i < l.length; i++) {
+  let best = Infinity, bi = -1, base = 0;
+  for (const l of lines) { for (let i = 1; i < l.length; i++) {
     const ax = (l[i - 1][0] - p.lng) * k, ay = (l[i - 1][1] - p.lat) * m;
     const bx = (l[i][0] - p.lng) * k, by = (l[i][1] - p.lat) * m;
     const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
     const t = L2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
     const d = Math.hypot(ax + t * dx, ay + t * dy);
-    if (d < best) best = d;
-  }
-  return best;
+    if (d < best) { best = d; bi = base + i - 1; }
+  } base += l.length; }
+  return { d: best, i: bi };
 }
+// within a river's local visible width (or `minKm`, e.g. some pixels when zoomed out)
+const nearLine = (f, p, minKm) => { const r = distToLine(p, f.geometry); return r.d <= Math.max(localWidthKm(f, r.i) / 2 + 0.3, minKm); };
 
 // "Where am I?": areas containing the view center and rivers running near it.
 function updateContext() {
@@ -508,7 +599,7 @@ function updateContext() {
     const b = f.bbox;
     if (!f.geometry || (b && (c.lng < b[0] - 1 || c.lng > b[2] + 1 || c.lat < b[1] - 1 || c.lat > b[3] + 1))) continue;
     if (f._kind === 'area' && geometryContains(f.geometry, c.lng, c.lat)) inside.push(f);
-    else if (f._kind === 'line' && (distToLineKm(c, f.geometry) <= Math.max(riverWidthKm(f) / 2 + 0.3, 60 * mpp / 1000)
+    else if (f._kind === 'line' && (nearLine(f, c, 60 * mpp / 1000)
       || (f.belt && geometryContains(f.belt, c.lng, c.lat)))) near.push(f);
   }
   inside.sort((a, b) => a.extent_km - b.extent_km);
@@ -540,11 +631,11 @@ function whatsHere(p) {
       if (!b || (p.lng >= b[0] && p.lng <= b[2] && p.lat >= b[1] && p.lat <= b[3])) near = geometryContains(g, p.lng, p.lat);
       if (near && tooBig(f)) { around.push(f); continue; }
     } else if (g && /LineString/.test(g.type)) {
-      // within the river's visible width (or ~12px when zoomed out)
+      // within the river's local visible width (or ~12px when zoomed out)
       const tolKm = Math.max(riverWidthKm(f) / 2 + 0.3, 12 * mpp / 1000);
       const b = f.bbox, pad = tolKm / 100;
       if (!b || (p.lng >= b[0] - pad && p.lng <= b[2] + pad && p.lat >= b[1] - pad && p.lat <= b[3] + pad))
-        near = distToLineKm(p, g) <= tolKm;
+        near = nearLine(f, p, 12 * mpp / 1000);
       // anastomosing rivers (Cooper Creek, Darling…) carry a channel-belt polygon many km wider than the line
       if (!near && f.belt) near = geometryContains(f.belt, p.lng, p.lat);
     } else {
