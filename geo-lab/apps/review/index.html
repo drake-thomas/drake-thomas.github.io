@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="../../lib/ui.css">
 <script src="../../config.js"></script>
 <style>
-  :root { --side: 360px; --blob: #ffd23f; --member: #4fe3ff; --yes: #5ad17a; --no: #ff6b6b; --maybe: #f0b84a; --fix: #c58cff; }
+  :root { --side: 360px; --blob: #ffd23f; --member: #4fe3ff; --yes: #5ad17a; --no: #ff6b6b; --maybe: #f0b84a; --fix: #c58cff; --nb: #ff9f43; }
   #mapWrap { position: fixed; top: 0; left: 0; bottom: 0; right: var(--side); }
   #map { width: 100%; height: 100%; }
   #retry[hidden] { display: none; }
@@ -33,6 +33,12 @@
   .mem .sub { color: var(--muted); font-size: 12px; }
   .mem .vis { color: #c9b98a; font-size: 11.5px; margin-top: 2px; }
   .mem a, .grp a { color: #9fd8ff; text-decoration: none; }
+  .mem.out .nm { text-decoration: line-through; opacity: .55; }
+  .mem.added { border-left: 3px solid var(--nb); }
+  .mem .tog { float: right; margin-left: 6px; padding: 0 6px; font-size: 12px; }
+  #selbar { margin: 0 0 6px; padding: 5px 8px; border-radius: 7px; background: #1b2128; font-size: 12.5px; }
+  #selbar.changed { outline: 1px solid var(--nb); }
+  #selbar b { font-variant-numeric: tabular-nums; }
   .grp { margin-top: 10px; padding: 6px 7px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
   .grp summary { cursor: pointer; }
   .sc { font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -84,7 +90,7 @@
   <button id="overlayBtn" title="Hide/show outlines to see the bare imagery (O, or hold H)">Outlines (O)</button>
   <button id="refit" title="Re-fit to the blob (0)">Fit (0)</button>
 </div>
-<div id="legend" class="panel muted"><i style="border-top:3px solid var(--blob)"></i>blob &nbsp; <i style="border-top:1.5px solid var(--member)"></i>member borders &nbsp; <i style="border-top:1.5px dashed #fff;opacity:.6"></i>other queue blobs</div>
+<div id="legend" class="panel muted"><i style="border-top:3px solid var(--blob)"></i>blob &nbsp; <i style="border-top:1.5px solid var(--member)"></i>member borders &nbsp; <i style="border-top:1.5px dashed #fff;opacity:.6"></i>other queue blobs &nbsp; <i style="border-top:2px dashed var(--nb)"></i>nearby (click: add/remove)</div>
 <div id="status" class="panel muted">Loading…</div>
 <div id="tip" hidden></div>
 
@@ -102,6 +108,7 @@
   <div id="body">
     <h2 id="title"></h2>
     <div id="meta" class="small muted"></div>
+    <div id="selbar"></div>
     <div id="members"></div>
   </div>
   <div id="foot">
@@ -127,6 +134,7 @@
 import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { FB_NAME, FB_OWNER, lsGet, lsSet, fbPost, fbQueue, fbSave } from '../../lib/feedback.js';
 import { openPolyEdit, activeEditor, drawGeometry } from '../../lib/polyedit.js';
+import { wx, wy, shapeOf, unionOutline, orderMembers, MAX_MEMBERS } from '../../lib/reviewsel.js';
 
 const QUEUE = 'protected';
 const DATA = '../../data/review/';
@@ -136,6 +144,11 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 let hints = {};
+// member selection (owner, 2026-10-12: "see all the relevant areas next to this merged blob and judge whether to include them"):
+// sel = refs the verdict covers; starts as the blob's members; nearby candidate members (split-off neighbours + queue members
+// within ~1.25x the blob's extent) are drawn dashed orange and toggle in/out on click, as do the blob's own members.
+// A Y/M/F verdict on a changed selection carries members (same item format as board.html); candidate_id stays the blob id.
+let sel = new Set(), blobRefs = [], memInfo = new Map(), nbPolys = [];
 let map, gm, index = [], byId = new Map(), regionData = {}, regionLoading = {}, list = [], pos = 0;
 let curGeom = null, pending = null, pendingShapes = [];  // blob outline as GeoJSON; an edited outline awaiting its "fix" verdict
 let shapes = [], ctxShapes = [], memberPolys = [], fitZoom = null, zoomedOut = false, armed = null, hlRef = null, scale = 1e4;
@@ -230,34 +243,94 @@ function fit(b) {
 }
 
 function draw(b, d) {
-  clear(shapes); clear(ctxShapes); memberPolys = [];
+  clear(shapes); clear(ctxShapes); memberPolys = []; nbPolys = []; blobRefs = []; sel = new Set(); memInfo = new Map();
   curGeom = d ? { type: 'MultiPolygon', coordinates: d.g.map(poly => poly.map(r => decodeRing(r).map(p => [p.lng, p.lat]))) } : null;
   if (!d) { $('members').innerHTML = '<div class="muted small">No outline data for this blob.</div>'; return; }
   const multi = d.members.length > 1;
-  d.members.forEach((m, k) => {
+  blobRefs = d.members.map(m => m.ref); sel = new Set(blobRefs); memInfo = new Map(); nbPolys = [];
+  const addPoly = (m, k, nb) => {
     const paths = decode(m.g);
     const poly = new gm.Polygon({ map, paths, strokeColor: multi ? '#4fe3ff' : '#ffd23f', strokeOpacity: multi ? 0.9 : 0, strokeWeight: multi ? 1.4 : 0,
-      fillColor: '#4fe3ff', fillOpacity: 0.001, zIndex: 2 + k, clickable: true });
-    poly._m = m;
+      fillColor: '#4fe3ff', fillOpacity: 0.001, zIndex: nb ? 1 : 2 + k, clickable: true });
+    poly._m = m; poly._nb = nb;
+    // dashed twin, shown while the member is out of the selection
+    poly._dash = paths.map(path => new gm.Polyline({ map: null, path, strokeColor: nb ? '#ff9f43' : '#ff6b6b', strokeOpacity: 0, zIndex: 3, clickable: false,
+      icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.9, strokeWeight: 2, scale: 2.5 }, offset: '0', repeat: '9px' }] }));
     poly.addListener('mouseover', e => hl(m.ref, e));
     poly.addListener('mousemove', e => moveTip(e));
     poly.addListener('mouseout', () => hl(null));
-    poly.addListener('click', e => { hl(m.ref, e, true); document.querySelector(`.mem[data-ref="${CSS.escape(m.ref)}"]`)?.scrollIntoView({ block: 'nearest' }); });
-    shapes.push(poly); memberPolys.push(poly);
-  });
+    poly.addListener('click', e => { toggleSel(m.ref); hl(m.ref, e, true); document.querySelector(`.mem[data-ref="${CSS.escape(m.ref)}"]`)?.scrollIntoView({ block: 'nearest' }); });
+    shapes.push(poly, ...poly._dash); memberPolys.push(poly);
+    memInfo.set(m.ref, { m, poly, nb });
+    if (nb) nbPolys.push(poly);
+  };
+  d.members.forEach((m, k) => addPoly(m, k, null));
+  nearbyMembers(b, d).forEach((x, k) => addPoly(x.m, k, x));
   // blob outline on top, bold
   for (const path of decode(d.g)) {
     shapes.push(new gm.Polyline({ map, path, strokeColor: '#000', strokeOpacity: 0.55, strokeWeight: 5.5, zIndex: 50, clickable: false }));
-    shapes.push(new gm.Polyline({ map, path, strokeColor: '#ffd23f', strokeOpacity: 1, strokeWeight: 2.6, zIndex: 51, clickable: false }));
+    shapes.push(blobLine(new gm.Polyline({ map, path, strokeColor: '#ffd23f', strokeOpacity: 1, strokeWeight: 2.6, zIndex: 51, clickable: false })));
   }
   drawContext(b);
-  $('members').innerHTML = d.members.map(m => {
+  memberPolys.forEach(styleMember);
+  renderMembers(d);
+}
+// the member list: the blob's members (in/out) and any added neighbours, plus the grouping details
+function renderMembers(d) {
+  const added = [...sel].filter(r => !blobRefs.includes(r)).map(r => memInfo.get(r)?.m).filter(Boolean);
+  renderSelbar();
+  $('members').innerHTML = [...d.members, ...added].map(m => {
     const wl = wikiLink(m.wiki);
-    return `<div class="mem" data-ref="${esc(m.ref)}">
-      <div class="row" style="gap:6px"><span class="nm grow">${esc(m.name)}</span><span class="sc ${scoreCls(Math.max(m.score ?? -1, m.gscore ?? -1) < 0 ? null : Math.max(m.score ?? -1, m.gscore ?? -1))}" title="EOX score${m.gscore != null ? ' / Google score' : ''}">${fmtScore(m.score)}${m.gscore != null ? ` / G ${fmtScore(m.gscore)}` : ''}</span></div>
+    const isNb = !blobRefs.includes(m.ref), inSel = sel.has(m.ref);
+    return `<div class="mem${inSel ? '' : ' out'}${isNb ? ' added' : ''}" data-ref="${esc(m.ref)}">
+      <div class="row" style="gap:6px"><span class="nm grow">${esc(m.name)}</span><button class="linkish tog" data-tog="${esc(m.ref)}" title="${inSel ? 'Leave out of this verdict' : 'Include again'}">${inSel ? '×' : '+'}</button><span class="sc ${scoreCls(Math.max(m.score ?? -1, m.gscore ?? -1) < 0 ? null : Math.max(m.score ?? -1, m.gscore ?? -1))}" title="EOX score${m.gscore != null ? ' / Google score' : ''}">${fmtScore(m.score)}${m.gscore != null ? ` / G ${fmtScore(m.gscore)}` : ''}</span></div>
       <div class="sub">${m.umb ? '<span class="tag" title="paper/umbrella designation: never glues neighbours into this blob">umbrella</span> ' : ''}${esc(m.desig)}${m.year ? ` · ${m.year}` : ''} · ${fmtArea(m.km2)} · <a href="${refLink(m.ref)}" target="_blank" rel="noopener">${esc(m.ref)}</a>${(m.alt || []).map(r => ` · <a href="${refLink(r)}" target="_blank" rel="noopener">${esc(r)}</a>`).join('')}${wl ? ` · <a href="${wl}" target="_blank" rel="noopener">wiki</a>` : ''}</div>
-      ${m.vis ? `<div class="vis">👁 ${esc(m.vis)}</div>` : ''}</div>`;
+      ${m.vis ? `<div class="vis">👁 ${esc(m.vis)}</div>` : ''}${isNb ? `<div class="sub">added from ${esc(memInfo.get(m.ref)?.nb?.blobName || 'a nearby blob')}</div>` : ''}</div>`;
   }).join('') + groupingHtml(d);
+}
+let blobLines = [];
+const blobLine = l => (blobLines.push(l), l);
+const selChanged = () => sel.size !== blobRefs.length || blobRefs.some(r => !sel.has(r));
+function renderSelbar() {
+  const km = [...sel].reduce((s, r) => s + (memInfo.get(r)?.m.km2 || 0), 0);
+  const plus = [...sel].filter(r => !blobRefs.includes(r)).length, minus = blobRefs.filter(r => !sel.has(r)).length;
+  $('selbar').classList.toggle('changed', selChanged());
+  blobLines = blobLines.filter(l => l.getMap() || shapes.includes(l));
+  blobLines.forEach(l => l.setOptions({ strokeOpacity: selChanged() ? 0.35 : 1 }));  // the queue's grouping no longer decides
+  $('selbar').innerHTML = `Verdict covers <b>${sel.size}</b> member${sel.size === 1 ? '' : 's'} · <b>${fmtArea(km)}</b>`
+    + (selChanged() ? ` <span class="muted">(+${plus} / −${minus} vs the blob)</span> <button class="linkish small" id="selReset">reset</button>` : ` <span class="muted">· ${nbPolys.length} nearby to click in</span>`);
+  $('selReset')?.addEventListener('click', () => { sel = new Set(blobRefs); memberPolys.forEach(styleMember); renderMembers(regionData[list[pos].region][list[pos].id]); });
+}
+function toggleSel(ref) {
+  if (sel.has(ref)) sel.delete(ref); else sel.add(ref);
+  const x = memInfo.get(ref); if (x) styleMember(x.poly);
+  const b = list[pos]; if (b) renderMembers(regionData[b.region][b.id]);
+}
+// in: like a blob member (cyan border); out: dashed (orange for nearby, red for the blob's own members left out)
+function styleMember(p, hot) {
+  const multi = memberPolys.filter(q => !q._nb).length > 1 || sel.size > 1, on = sel.has(p._m.ref);
+  p.setOptions(hot ? { fillOpacity: 0.18, strokeWeight: 2.4, strokeOpacity: 1, strokeColor: '#ffffff' }
+    : on ? { fillColor: '#4fe3ff', fillOpacity: p._nb ? 0.08 : 0.001, strokeWeight: multi ? 1.4 : 0, strokeOpacity: multi ? 0.9 : 0, strokeColor: multi ? '#4fe3ff' : '#ffd23f' }
+    : { fillColor: p._nb ? '#ff9f43' : '#ff6b6b', fillOpacity: 0.05, strokeOpacity: 0, strokeWeight: 0 });
+  const show = !on && overlayOn && p.getMap();
+  p._dash.forEach(l => l.setMap(show ? map : null));
+}
+// candidate members near the blob: its split-off neighbours plus members of queue blobs overlapping ~1.25x its extent
+function nearbyMembers(b, d) {
+  const blobs = regionData[b.region] || {}, own = new Set(d.members.map(m => m.ref)), out = new Map();
+  const add = (m, bid) => { if (m && !own.has(m.ref) && !out.has(m.ref) && (st.umb || !m.umb)) out.set(m.ref, { m, blobId: bid, blobName: byId.get(bid)?.name || bid }); };
+  for (const [, ref, , bid] of d.split || []) add(blobs[bid]?.members?.find(m => m.ref === ref), bid);
+  const [w, s, e, n] = b.bbox, mx = Math.max(e - w, n - s, 0.05) * 0.625;
+  const W = [wx(w - mx), wy(n + mx), wx(e + mx), wy(s - mx)];
+  for (const q of index) {
+    if (q === b || q.region !== b.region || !(q.bbox[0] < e + mx && q.bbox[2] > w - mx && q.bbox[1] < n + mx && q.bbox[3] > s - mx)) continue;
+    for (const m of blobs[q.id]?.members || []) {
+      const bb = (m._sh ||= shapeOf(m.g, scale)).bb;
+      if (bb[0] < W[2] && bb[2] > W[0] && bb[1] < W[3] && bb[3] > W[1]) add(m, q.id);
+    }
+    if (out.size > 250) break;
+  }
+  return [...out.values()].slice(0, 250);
 }
 
 // why this blob is grouped the way it is (make_queue.py: neighbours merge when the shared border is invisible on EOX)
@@ -288,6 +361,7 @@ function drawContext(cur) {
   const blobs = regionData[cur.region];
   for (const b of near) {
     const d = blobs?.[b.id]; if (!d) continue;
+    if (d.members.every(m => memInfo.has(m.ref))) continue;  // drawn as clickable nearby members instead
     const v = verdicts[b.id]?.v, col = v ? getComputedStyle(document.documentElement).getPropertyValue(`--${v}`).trim() : '#ffffff';
     for (const path of decode(d.g)) ctxShapes.push(new gm.Polyline({ map, path, strokeColor: col, strokeOpacity: 0,
       icons: [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.65, strokeWeight: 1.5, scale: 2 }, offset: '0', repeat: '8px' }], zIndex: 1, clickable: false }));
@@ -297,13 +371,11 @@ function drawContext(cur) {
 function hl(ref, e, sticky) {
   if (!sticky && hlRef?.sticky && ref === null) return;
   hlRef = ref ? { ref, sticky } : null;
-  for (const p of memberPolys) {
-    const on = p._m.ref === ref;
-    p.setOptions({ fillOpacity: on ? 0.18 : 0.001, strokeWeight: on ? 2.4 : (memberPolys.length > 1 ? 1.4 : 0), strokeOpacity: on ? 1 : (memberPolys.length > 1 ? 0.9 : 0), strokeColor: on ? '#ffffff' : (memberPolys.length > 1 ? '#4fe3ff' : '#ffd23f') });
-  }
+  for (const p of memberPolys) styleMember(p, p._m.ref === ref);
   document.querySelectorAll('.mem').forEach(el => el.classList.toggle('hl', el.dataset.ref === ref));
   const m = memberPolys.find(p => p._m.ref === ref)?._m;
-  if (m && e?.domEvent) { $('tip').innerHTML = `<b>${esc(m.name)}</b> · ${esc(m.desig)} · ${fmtArea(m.km2)} · ${fmtScore(m.score)}`; $('tip').hidden = false; moveTip(e); }
+  const nb = memInfo.get(ref)?.nb;
+  if (m && e?.domEvent) { $('tip').innerHTML = `<b>${esc(m.name)}</b> · ${esc(m.desig)} · ${fmtArea(m.km2)} · ${fmtScore(m.score)}${nb ? ` · <i>nearby, in ${esc(nb.blobName)}</i>` : ''} · click: ${sel.has(ref) ? 'leave out' : 'include'}`; $('tip').hidden = false; moveTip(e); }
   else if (!m) $('tip').hidden = true;
   if (sticky) { clearTimeout(hl._t); hl._t = setTimeout(() => { hlRef = null; hl(null); }, 3500); }
 }
@@ -316,6 +388,7 @@ function moveTip(e) {
 $('members').addEventListener('mouseover', e => { const el = e.target.closest('.mem'); if (el) hl(el.dataset.ref); });
 $('members').addEventListener('mouseleave', () => hl(null));
 $('members').addEventListener('click', e => {
+  const t = e.target.closest('[data-tog]'); if (t) { e.stopPropagation(); toggleSel(t.dataset.tog); return; }
   if (e.target.closest('a')) return;
   const el = e.target.closest('.mem'); if (!el) return;
   const p = memberPolys.find(q => q._m.ref === el.dataset.ref); if (!p) return;
@@ -344,8 +417,13 @@ async function gavel(v) {
   const b = list[pos]; if (!b) return;
   const note = $('note').value.trim();
   const item = { type: 'review', queue: QUEUE, candidate_id: b.id, candidate_name: b.name, verdict: v, note, ts: new Date().toISOString() };
+  if (v !== 'no' && list[pos] === b && selChanged()) {  // the owner changed which members this covers (board.html item format)
+    if (!sel.size) { flash('Nothing selected: click outlines to include them', true); return; }
+    if (sel.size > MAX_MEMBERS) { flash(`Too many members (${sel.size} > ${MAX_MEMBERS})`, true); return; }
+    item.members = orderMembers([...sel].map(r => memInfo.get(r)?.m).filter(Boolean)).map(m => m.ref);
+  }
   if (pending?.id === b.id && (v === 'fix' || v === 'yes')) Object.assign(item, { geometry: pending.g, geom_meta: pending.meta });
-  verdicts[b.id] = { v, note, ts: item.ts, ...(item.geometry ? { geom: true } : {}) }; saveVerdicts();
+  verdicts[b.id] = { v, note, ts: item.ts, ...(item.geometry ? { geom: true } : {}), ...(item.members ? { members: item.members.length } : {}) }; saveVerdicts();
   $('note').blur(); setArmed(null);
   // advance immediately; send in the background
   const nextId = nextTarget();
@@ -366,7 +444,9 @@ for (const btn of document.querySelectorAll('#verdicts button')) btn.onclick = (
 function fixEdit() {
   const b = list[pos]; if (!b) return;
   if (!curGeom) { flash('Outline still loading', true); return; }
-  openPolyEdit(map, { geometry: pending?.id === b.id ? pending.g : curGeom, title: b.name, doneLabel: 'Done → fix', onDone: (g, meta) => {
+  // a changed selection starts the editor from the union of the selected members' outlines
+  const start = pending?.id === b.id ? pending.g : selChanged() ? unionOutline([...sel].map(r => { const m = memInfo.get(r)?.m; return m && (m._sh ||= shapeOf(m.g, scale)); })) : curGeom;
+  openPolyEdit(map, { geometry: start, title: b.name, doneLabel: 'Done → fix', onDone: (g, meta) => {
     if (list[pos] !== b) return;
     if (!g && !pending) return gavel('fix');
     if (g) { pending = { id: b.id, g, meta }; clear(pendingShapes); pendingShapes.push(...drawGeometry(map, g)); }
@@ -395,7 +475,10 @@ function zoomToggle() {
 }
 // O toggles all outlines; holding H hides them only while held, to judge the bare imagery
 let overlayOn = true;
-function setOverlay(on) { overlayOn = on; [...shapes, ...ctxShapes].forEach(x => x.setMap(on ? map : null)); $('overlayBtn').classList.toggle('on', !on); }
+function setOverlay(on) {
+  overlayOn = on; [...shapes, ...ctxShapes].forEach(x => { if (!memberPolys.some(p => p._dash?.includes(x))) x.setMap(on ? map : null); });
+  memberPolys.forEach(p => styleMember(p)); $('overlayBtn').classList.toggle('on', !on);
+}
 function toggleLabels() { st.labels = !st.labels; saveState(); map.setMapTypeId(st.labels ? 'hybrid' : 'satellite'); $('labelsBtn').classList.toggle('on', st.labels); }
 $('zToggle').onclick = zoomToggle;
 $('labelsBtn').onclick = toggleLabels;
@@ -474,7 +557,7 @@ async function main() {
     zoomControl: true, zoomControlOptions: { position: gm.ControlPosition.LEFT_CENTER },
   });
   $('labelsBtn').classList.toggle('on', st.labels);
-  window.__review = { map, list: () => list, pos: () => pos, verdicts, index };
+  window.__review = { map, list: () => list, pos: () => pos, verdicts, index, sel: () => [...sel], toggleSel, nearby: () => nbPolys.map(p => p._m.ref), gavel };
   $('status').remove();
   renderWho(); refreshRetry();
   // a #blob-id link opens that blob; otherwise start at the top of the current order (with "unreviewed" on that's the
