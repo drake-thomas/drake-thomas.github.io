@@ -618,7 +618,7 @@ function whatsHere(p) {
   // A region many screens across isn't what you clicked on when zoomed into a small patch of it (a 1 km view of
   // Colorado isn't "the Rocky Mountains"); it's listed as context in the panel instead.
   const screenKm = map.getDiv().clientWidth * mpp / 1000;
-  const tooBig = f => f.extent_km > 12 * screenKm;
+  const tooBig = f => f.extent_km > 5 * screenKm;
   const hits = [], around = [];
   for (const f of features) {
     if (!state.groups.has(catGroup(f.category))) continue;
@@ -648,6 +648,10 @@ function whatsHere(p) {
   const key = f => f._kind === 'line' ? 60 : f.extent_km;
   hits.sort((a, b) => key(a) - key(b));
   if (hits.length === 1) return select(hits[0]);
+  // Nested areas (a reserve inside a reserve block inside a region): the smallest one is what you clicked on;
+  // the containers show in the context bar. Only offer a list when the hits are genuinely different things.
+  const isArea = f => /Polygon/.test(f.geometry?.type || '');
+  if (hits.length > 1 && isArea(hits[0]) && hits.slice(1).every(f => isArea(f) && f.extent_km > 1.6 * hits[0].extent_km)) return select(hits[0]);
   if (!hits.length) {
     state.selected = null; drawOutline(null);
     around.sort((a, b) => a.extent_km - b.extent_km);
