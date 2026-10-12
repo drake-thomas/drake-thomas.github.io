@@ -91,6 +91,7 @@
       <button id="fbIn" title="Click points that should be inside the selected feature (I)">+ inside (I)</button>
       <button id="fbOut" title="Click points that should NOT be inside it (O)">− outside (O)</button>
       <button id="fbLasso" title="Draw a loop around something unlabeled (W)">◯ what's this? (W)</button>
+      <button id="fbEdit" title="Edit the selected feature's outline by hand: drag, add or delete vertices, replace a stretch, redraw (E)">⬠ edit outline (E)</button>
     </div>
     <div class="small fbwarn" id="fbWarn" hidden>Not attached to any feature. Open a card (click a label) with the feature on screen, or draw a loop with W.</div>
     <div class="row small" id="fbWho"></div>
@@ -113,6 +114,7 @@ import { Linkifier } from '../../lib/linkify.js';
 import { openWiki } from '../../lib/wikipanel.js';
 import { sourceListHtml, bindSources } from '../../lib/sources.js';
 import { FB_NAME, lsGet, lsSet, fbPost, fbQueue, fbSave } from '../../lib/feedback.js';
+import { openPolyEdit, activeEditor, drawGeometry } from '../../lib/polyedit.js';
 
 const CATS = {  // category -> [group, color]
   'impact-crater': ['Geologic', '#ff7a59'], 'geologic-structure': ['Geologic', '#ff9f68'],
@@ -171,7 +173,7 @@ async function main() {
   layer = makeLabelLayer(gm);
   layer.setMap(map);
   map.addListener('idle', () => { writeHash(); updateZoomInfo(); updateContext(); if (!$('fb').classList.contains('hidden')) fbRefresh(); });
-  map.addListener('click', e => { if (fbPointClick(e.latLng.toJSON())) return; whatsHere(e.latLng.toJSON()); });
+  map.addListener('click', e => { if (activeEditor()) return; if (fbPointClick(e.latLng.toJSON())) return; whatsHere(e.latLng.toJSON()); });
   $('status').remove();
   buildFilters();
   if (start.id) { const f = features.find(x => x.id === start.id || x.alt_ids?.includes(start.id)); if (f) select(f, false); }
@@ -799,6 +801,7 @@ function fbRefresh() {
   $('fbQueue').hidden = !q.length;
   if (!$('fbList').hidden) fbRenderList();
   for (const [id, m] of [['fbIn', 'in'], ['fbOut', 'out'], ['fbLasso', 'lasso']]) $(id).classList.toggle('on', fb.mode === m);
+  $('fbEdit').classList.toggle('on', !!fb.geom); $('fbEdit').textContent = fb.geom ? '⬠ outline edited ✓ (E)' : '⬠ edit outline (E)';
   $('fbTitle').textContent = subj ? `Feedback · ${subj.name}` : (fb.lasso ? "What's this?" : 'Feedback');
   $('fbWarn').hidden = !!(subj || fb.lasso || fb.mode === 'lasso' || !$('fbNote').value.trim());
   fb.confirmUnattached = false;
@@ -838,12 +841,12 @@ function fbUndo() {
 }
 function fbClear() {
   fb.shapes.forEach(s => s.setMap(null));
-  Object.assign(fb, { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [], undo: [] });
+  Object.assign(fb, { mode: null, target: null, inPts: [], outPts: [], lasso: null, shapes: [], undo: [], geom: null, geomMeta: null, geomShapes: null });
   $('fbNote').value = '';
   fbRefresh();
 }
 async function fbSend() {
-  if (!fb.inPts.length && !fb.outPts.length && !fb.lasso && !$('fbNote').value.trim()) { $('fbHelp').textContent = 'Nothing to send yet.'; return; }
+  if (!fb.inPts.length && !fb.outPts.length && !fb.lasso && !fb.geom && !$('fbNote').value.trim()) { $('fbHelp').textContent = 'Nothing to send yet.'; return; }
   const nameIn = $('fbName');
   if (nameIn) { const v = nameIn.value.trim(); if (!v) { $('fbHelp').textContent = 'Add a name (any name) so we know who sent it.'; nameIn.focus(); return; }
     lsSet(FB_NAME, v); fb.editName = false; fbRenderWho(); }
@@ -855,9 +858,10 @@ async function fbSend() {
   }
   const c = map.getCenter();
   const item = {
-    type: fb.lasso ? 'request' : (fb.inPts.length || fb.outPts.length ? 'correction' : 'note'), ts: new Date().toISOString(),
+    type: fb.lasso ? 'request' : (fb.inPts.length || fb.outPts.length || fb.geom ? 'correction' : 'note'), ts: new Date().toISOString(),
     feature_id: subj?.id || null, feature_name: subj?.name || null,
     include: fb.inPts, exclude: fb.outPts, lasso: fb.lasso, note: $('fbNote').value.trim(),
+    ...(fb.geom ? { geometry: fb.geom, geom_meta: fb.geomMeta } : {}),
     view: { lat: +c.lat().toFixed(4), lng: +wrapLng(c.lng()).toFixed(4), z: +map.getZoom().toFixed(1) }, url: location.href,
   };
   const res = await fbPost(item);
@@ -935,6 +939,21 @@ $('fbClose').onclick = () => { fb.mode = null; $('fb').classList.add('hidden'); 
 $('fbIn').onclick = () => fbSetMode('in');
 $('fbOut').onclick = () => fbSetMode('out');
 $('fbLasso').onclick = () => fbSetMode('lasso');
+$('fbEdit').onclick = () => fbEdit();
+// manual outline editor (lib/polyedit.js): E edits a copy of the selected feature's outline (or draws one for a point
+// feature); the edited GeoJSON rides on the correction item as `geometry`
+function fbEdit() {
+  const ed = activeEditor(); if (ed) return ed.action('done');
+  const f = fb.geom && fb.target ? fb.target : state.selected;
+  if (!f) { fbOpen(); $('fbHelp').textContent = 'Select a feature first (click its label), then press E.'; return; }
+  fbOpen(); fb.mode = null; fbRefresh();
+  fb.geomShapes?.forEach(s => s.setMap(null));
+  openPolyEdit(map, { geometry: fb.geom || f.geometry || null, title: f.name, onDone: (g, meta) => {
+    if (!g) return;
+    fb.geomShapes = drawGeometry(map, g); fb.shapes.push(...fb.geomShapes);
+    Object.assign(fb, { geom: g, geomMeta: meta, target: f, flash: `Edited outline attached (${meta.vertices} vertices). Add a note if you like, then Send.`, flashAt: Date.now() });
+  }, onClose: () => { fb.geomShapes?.forEach(s => s.setMap(map)); fbRefresh(); } });
+}
 $('fbSend').onclick = fbSend;
 $('fbClear').onclick = fbClear;
 $('fbNote').addEventListener('input', () => { $('fbWarn').hidden = !!(fbSubject() || fb.lasso || !$('fbNote').value.trim()); });
@@ -949,6 +968,7 @@ addEventListener('keydown', e => {
   else if (e.key === 'i' || e.key === 'I') fbSetMode('in');
   else if (e.key === 'o' || e.key === 'O') fbSetMode('out');
   else if (e.key === 'w' || e.key === 'W') fbSetMode('lasso');
+  else if (e.key === 'e' || e.key === 'E') fbEdit();
   else if (e.key === 'r' || e.key === 'R') surprise();
   else if (e.key === 'n' || e.key === 'N') nearby();
   else if (e.key === 'l' || e.key === 'L') toggleLabels();

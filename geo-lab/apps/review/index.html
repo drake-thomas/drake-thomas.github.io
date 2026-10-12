@@ -113,7 +113,7 @@
       <button id="retry" class="linkish small" hidden></button>
     </div>
     <div id="who" class="row small"></div>
-    <div id="help" class="muted"><kbd>Y</kbd> yes <kbd>N</kbd> no <kbd>M</kbd> maybe <kbd>F</kbd> fix outline · <kbd>Shift</kbd>+key or <kbd>/</kbd> = add a note, <kbd>Enter</kbd> sends ·
+    <div id="help" class="muted"><kbd>Y</kbd> yes <kbd>N</kbd> no <kbd>M</kbd> maybe <kbd>F</kbd> fix outline (opens the editor) · <kbd>Shift</kbd>+key or <kbd>/</kbd> = add a note, <kbd>Enter</kbd> sends ·
       <kbd>←</kbd><kbd>→</kbd> move · <kbd>Z</kbd> zoom out/in · <kbd>-</kbd><kbd>=</kbd> zoom · <kbd>0</kbd> refit · <kbd>L</kbd> labels</div>
   </div>
 </aside>
@@ -121,6 +121,7 @@
 <script type="module">
 import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { FB_NAME, FB_OWNER, lsGet, lsSet, fbPost, fbQueue, fbSave } from '../../lib/feedback.js';
+import { openPolyEdit, activeEditor, drawGeometry } from '../../lib/polyedit.js';
 
 const QUEUE = 'protected';
 const DATA = '../../data/review/';
@@ -130,6 +131,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 let map, gm, index = [], byId = new Map(), regionData = {}, regionLoading = {}, list = [], pos = 0;
+let curGeom = null, pending = null, pendingShapes = [];  // blob outline as GeoJSON; an edited outline awaiting its "fix" verdict
 let shapes = [], ctxShapes = [], memberPolys = [], fitZoom = null, zoomedOut = false, armed = null, hlRef = null, scale = 1e4;
 const verdicts = (() => { try { return JSON.parse(localStorage.getItem(VKEY) || '{}'); } catch { return {}; } })();
 const saveVerdicts = () => { try { localStorage.setItem(VKEY, JSON.stringify(verdicts)); } catch {} };
@@ -184,6 +186,7 @@ async function show(i) {
   }
   pos = (i + list.length) % list.length;
   const b = list[pos];
+  activeEditor()?.close(false); pending = null; clear(pendingShapes); curGeom = null;
   st.id = b.id; saveState();
   history.replaceState(null, '', '#' + encodeURIComponent(b.id));
   progress();
@@ -217,6 +220,7 @@ function fit(b) {
 
 function draw(b, d) {
   clear(shapes); clear(ctxShapes); memberPolys = [];
+  curGeom = d ? { type: 'MultiPolygon', coordinates: d.g.map(poly => poly.map(r => decodeRing(r).map(p => [p.lng, p.lat]))) } : null;
   if (!d) { $('members').innerHTML = '<div class="muted small">No outline data for this blob.</div>'; return; }
   const multi = d.members.length > 1;
   d.members.forEach((m, k) => {
@@ -308,7 +312,8 @@ async function gavel(v) {
   const b = list[pos]; if (!b) return;
   const note = $('note').value.trim();
   const item = { type: 'review', queue: QUEUE, candidate_id: b.id, candidate_name: b.name, verdict: v, note, ts: new Date().toISOString() };
-  verdicts[b.id] = { v, note, ts: item.ts }; saveVerdicts();
+  if (pending?.id === b.id && (v === 'fix' || v === 'yes')) Object.assign(item, { geometry: pending.g, geom_meta: pending.meta });
+  verdicts[b.id] = { v, note, ts: item.ts, ...(item.geometry ? { geom: true } : {}) }; saveVerdicts();
   $('note').blur(); setArmed(null);
   // advance immediately; send in the background
   const nextId = nextTarget();
@@ -323,7 +328,20 @@ function nextTarget() {  // the id we land on after gavelling the current one
   return null;  // everything in this filter is gavelled: just step on
 }
 $('retry').onclick = async () => { await flushQueue(); flash(fbQueue().some(x => x.type === 'review') ? 'Still unsent' : 'Sent ✓'); };
-for (const btn of document.querySelectorAll('#verdicts button')) btn.onclick = () => gavel(btn.dataset.v);
+for (const btn of document.querySelectorAll('#verdicts button')) btn.onclick = () => btn.dataset.v === 'fix' && !pending ? fixEdit() : gavel(btn.dataset.v);
+// F (fix) opens the outline editor (lib/polyedit.js) on the blob; Done arms "fix" with the edited outline attached and
+// focuses the note (Enter sends). Done without changes just gavels "fix" as before.
+function fixEdit() {
+  const b = list[pos]; if (!b) return;
+  if (!curGeom) { flash('Outline still loading', true); return; }
+  openPolyEdit(map, { geometry: pending?.id === b.id ? pending.g : curGeom, title: b.name, doneLabel: 'Done → fix', onDone: (g, meta) => {
+    if (list[pos] !== b) return;
+    if (!g && !pending) return gavel('fix');
+    if (g) { pending = { id: b.id, g, meta }; clear(pendingShapes); pendingShapes.push(...drawGeometry(map, g)); }
+    setArmed('fix'); $('note').focus();
+    flash(`Edited outline attached (${pending.meta.vertices} vertices): Enter sends "fix"`);
+  } });
+}
 $('note').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -356,6 +374,7 @@ addEventListener('keydown', e => {
   if (VERDICTS[k]) {
     e.preventDefault();
     if (e.shiftKey) { setArmed(VERDICTS[k]); $('note').focus(); }
+    else if (k === 'f' && !pending) fixEdit();
     else gavel(VERDICTS[k]);
   } else if (e.key === 'ArrowRight') { e.preventDefault(); show(pos + 1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); show(pos - 1); }
