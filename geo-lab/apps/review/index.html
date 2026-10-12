@@ -79,6 +79,7 @@
 <div id="zbtns">
   <button id="zToggle" title="Toggle zoom out one level (Z)">Zoom out (Z)</button>
   <button id="labelsBtn" title="Toggle map labels (L)">Labels (L)</button>
+  <button id="overlayBtn" title="Hide/show outlines to see the bare imagery (O, or hold H)">Outlines (O)</button>
   <button id="refit" title="Re-fit to the blob (0)">Fit (0)</button>
 </div>
 <div id="legend" class="panel muted"><i style="border-top:3px solid var(--blob)"></i>blob &nbsp; <i style="border-top:1.5px solid var(--member)"></i>member borders &nbsp; <i style="border-top:1.5px dashed #fff;opacity:.6"></i>other queue blobs</div>
@@ -208,6 +209,7 @@ async function show(i) {
   const blobs = await loadRegion(b.region);
   if (list[pos] !== b) return;  // moved on meanwhile
   draw(b, blobs[b.id]);
+  if (!overlayOn) setOverlay(false);
   // prefetch the next blob's region
   const nb = list[(pos + 1) % list.length]; if (nb) loadRegion(nb.region);
 }
@@ -365,9 +367,14 @@ function zoomToggle() {
   $('zToggle').classList.toggle('on', zoomedOut);
   $('zToggle').textContent = zoomedOut ? 'Zoom in (Z)' : 'Zoom out (Z)';
 }
+// O toggles all outlines; holding H hides them only while held, to judge the bare imagery
+let overlayOn = true;
+function setOverlay(on) { overlayOn = on; [...shapes, ...ctxShapes].forEach(x => x.setMap(on ? map : null)); $('overlayBtn').classList.toggle('on', !on); }
 function toggleLabels() { st.labels = !st.labels; saveState(); map.setMapTypeId(st.labels ? 'hybrid' : 'satellite'); $('labelsBtn').classList.toggle('on', st.labels); }
 $('zToggle').onclick = zoomToggle;
 $('labelsBtn').onclick = toggleLabels;
+$('overlayBtn').onclick = () => setOverlay(!overlayOn);
+addEventListener('keyup', e => { if ((e.key === 'h' || e.key === 'H') && !overlayOn && !/TEXTAREA|INPUT/.test(e.target.tagName)) setOverlay(true); });
 $('refit').onclick = () => list[pos] && fit(list[pos]);
 $('prev').onclick = () => show(pos - 1);
 $('next').onclick = () => show(pos + 1);
@@ -385,6 +392,8 @@ addEventListener('keydown', e => {
   else if (e.key === '/' || e.key === 'Enter') { e.preventDefault(); $('note').focus(); }
   else if (k === 'z') zoomToggle();
   else if (k === 'l') toggleLabels();
+  else if (k === 'o') setOverlay(!overlayOn);
+  else if (k === 'h') { if (!e.repeat) setOverlay(false); }
   else if (k === '0') list[pos] && fit(list[pos]);
   else if (e.key === '-' || e.key === '_') map.setZoom(map.getZoom() - 1);
   else if (e.key === '=' || e.key === '+') map.setZoom(map.getZoom() + 1);
