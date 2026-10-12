@@ -29,6 +29,8 @@
   .box h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 4px; font-weight: 600; }
   .box p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .box .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  #descText { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+  #descText.open { display: block; }
   #owner { border-color: #3c5a3f; }
   #resp { border-color: #5a4f2c; background: #1d1b15; }
   #mine { border-color: #34466a; }
@@ -89,7 +91,7 @@
       <h2 id="title"></h2>
       <div id="meta" class="small muted"></div>
     </div>
-    <div id="desc" class="box"><h3>Current description</h3><p id="descText"></p><div id="descSub" class="sub"></div></div>
+    <div id="desc" class="box"><h3>Current description</h3><p id="descText" title="Click to expand / collapse"></p><div id="descSub" class="sub"></div></div>
     <div id="owner" class="box"><h3>Your feedback</h3><p id="ownerNote"></p><div id="ownerSub" class="sub"></div>
       <div class="keyl"><span><i style="border-top:3px solid var(--feat)"></i>current outline</span><span style="color:var(--inc)">✚ in</span><span style="color:var(--exc)">━ out</span><span><i style="border-top:2px dashed var(--lasso)"></i>your loop</span></div></div>
     <div id="resp" class="box"><h3>My response <span id="stTag" class="tag"></span></h3><p id="respText"></p><div id="respSub" class="sub"></div></div>
@@ -242,6 +244,7 @@ function show(i) {
     ? `${esc(f.category || '')} · vis_zoom <b>${f.vis_zoom ?? '–'}</b>${f.country ? ' · ' + esc(f.country) : ''}${f.extent_km ? ` · ~${Math.round(f.extent_km)} km` : ''} · <code>${esc(f.id)}</code>${f.aka?.length ? `<br>aka ${esc(f.aka.join(', '))}` : ''}`
     : e.feature_id ? `<code>${esc(e.feature_id)}</code> is not in the current build (dropped or renamed?)` : 'No feature attached (nothing labelled here).';
   $('desc').hidden = !f;
+  $('descText').classList.remove('open');
   if (f) { $('descText').innerHTML = linky(f.description || '(no description)'); $('descSub').innerHTML = f.look_for ? `Look for: ${esc(f.look_for)}` : ''; }
   $('ownerNote').innerHTML = o.note ? linky(o.note) : '<span class="muted">(no note)</span>';
   const bits = [o.type, fmtDate(e.date) && `responded ${fmtDate(e.date)}`, e.inbox_id != null && `inbox #${e.inbox_id}`,
@@ -293,6 +296,7 @@ async function send(v) {
 }
 for (const b of document.querySelectorAll('#verdicts button')) b.onclick = () => send(b.dataset.v);
 $('retry').onclick = async () => { await flushQueue(); flash(fbQueue().some(x => x.type === 'review') ? 'Still unsent' : 'Sent ✓'); };
+$('descText').onclick = e => { if (!e.target.closest('a')) $('descText').classList.toggle('open'); };
 $('note').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(armed || 'reply'); }
   else if (e.key === 'Escape') { $('note').blur(); setArmed(null); }
