@@ -91,6 +91,7 @@
     <div class="row">
       <select id="fRegion" title="Region"><option value="">All regions</option><option value="africa">Africa</option><option value="asia">S/SE Asia</option><option value="samerica">S. America</option></select>
       <label title="Minimum blob score (area-weighted edge contrast; blank = include unmeasured)">score ≥ <input id="fMin" type="number" step="1" min="0" placeholder="any"></label>
+      <select id="fSort" title="Order"><option value="size">biggest first</option><option value="score">best score first</option></select>
       <label title="Skip blobs you've already gavelled"><input id="fUnrev" type="checkbox" checked> unreviewed</label>
     </div>
   </div>
@@ -135,7 +136,7 @@ let curGeom = null, pending = null, pendingShapes = [];  // blob outline as GeoJ
 let shapes = [], ctxShapes = [], memberPolys = [], fitZoom = null, zoomedOut = false, armed = null, hlRef = null, scale = 1e4;
 const verdicts = (() => { try { return JSON.parse(localStorage.getItem(VKEY) || '{}'); } catch { return {}; } })();
 const saveVerdicts = () => { try { localStorage.setItem(VKEY, JSON.stringify(verdicts)); } catch {} };
-const st = Object.assign({ region: '', min: '', unrev: true, id: null, labels: false },
+const st = Object.assign({ region: '', min: '', unrev: true, id: null, labels: false, sort: 'size' },
   (() => { try { return JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { return {}; } })());
 const saveState = () => { try { localStorage.setItem(SKEY, JSON.stringify(st)); } catch {} };
 
@@ -157,6 +158,9 @@ function rebuild(keepId) {
   const min = st.min === '' ? null : +st.min;
   list = index.filter(b => (!st.region || b.region === st.region) && (min === null || (b.rank ?? -1) >= min)
     && (!st.unrev || !verdicts[b.id] || b.id === keepId));
+  // biggest blobs first by default (owner, 2026-10-12): the big decisions first, the long tail of small reserves later
+  if (st.sort === 'size') list.sort((a, b) => (b.km2 || 0) - (a.km2 || 0));
+  else list.sort((a, b) => (b.rank ?? -1) - (a.rank ?? -1) || (b.km2 || 0) - (a.km2 || 0));
   pos = Math.max(0, keepId ? list.findIndex(b => b.id === keepId) : 0);
   if (pos < 0) pos = 0;
 }
@@ -387,13 +391,13 @@ addEventListener('keydown', e => {
 });
 
 // ---------- filters ----------
-$('fRegion').value = st.region; $('fMin').value = st.min; $('fUnrev').checked = st.unrev;
+$('fRegion').value = st.region; $('fMin').value = st.min; $('fUnrev').checked = st.unrev; $('fSort').value = st.sort || 'size';
 const onFilter = () => {
-  st.region = $('fRegion').value; st.min = $('fMin').value.trim(); st.unrev = $('fUnrev').checked; saveState();
+  st.region = $('fRegion').value; st.min = $('fMin').value.trim(); st.unrev = $('fUnrev').checked; st.sort = $('fSort').value; saveState();
   const cur = list[pos]?.id; rebuild(cur); if (list[pos]?.id !== cur) pos = 0; show(pos);
   $('fRegion').blur(); $('fUnrev').blur();
 };
-$('fRegion').onchange = onFilter; $('fUnrev').onchange = onFilter; $('fMin').onchange = onFilter;
+$('fRegion').onchange = onFilter; $('fUnrev').onchange = onFilter; $('fSort').onchange = () => { $('fSort').blur(); onFilter(); }; $('fMin').onchange = onFilter;
 $('fMin').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('fMin').blur(); } });
 
 // ---------- who ----------
