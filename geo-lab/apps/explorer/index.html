@@ -242,7 +242,7 @@ const lngIn = (lng, v) => v.w <= v.e ? lng >= v.w && lng <= v.e : lng >= v.w || 
 // build.py gives each river seg_vz = [[first vertex index, vis_zoom], ...] over its flattened vertex list (from
 // tools/river_profile.py: SWORD channel width + EOX contrast). A river is labelled when a stretch *in view* is
 // prominent enough, and its label sits on the most prominent in-view stretch near the view centre.
-const SEG_K = 0.8;  // build.py: levels later per halving of a stretch's visible width (local width below)
+const SEG_K = 1.0;  // build.py: levels later per halving of a stretch's strip width (fallback local width below)
 function buildRuns(f) {
   const g = f.geometry, V = [];
   for (const l of (g.type === 'LineString' ? [g.coordinates] : g.coordinates)) for (const c of l) V.push(c);
@@ -250,12 +250,14 @@ function buildRuns(f) {
   const cum = [0];
   for (let i = 1; i < V.length; i++) cum.push(cum[i - 1] + haversineKm({ lat: V[i - 1][1], lng: V[i - 1][0] }, { lat: V[i][1], lng: V[i][0] }));
   f._cum = cum;
-  const runs = f.seg_vz.map(([i0, vz], k) => {
+  const runs = f.seg_vz.map(([i0, vz, sw], k) => {
     const i1 = k + 1 < f.seg_vz.length ? f.seg_vz[k + 1][0] : V.length - 1;
     const b = [Infinity, Infinity, -Infinity, -Infinity];
     for (let i = i0; i <= i1; i++) { const [x, y] = V[i]; b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); }
-    return { i0, i1, vz, bbox: b, w: riverWidthKm(f) * 2 ** (-(vz - f.vis_zoom) / SEG_K) };
+    // sw: width (km) of the visually distinct strip (braid plain, green valley...) on this stretch
+    return { i0, i1, vz, bbox: b, w: sw ?? riverWidthKm(f) * 2 ** (-(vz - f.vis_zoom) / SEG_K) };
   });
+  f._maxW = Math.max(...runs.map(r => r.w));
   f._runOf = new Int32Array(V.length);
   runs.forEach((r, k) => { for (let i = r.i0; i <= r.i1; i++) f._runOf[i] = k; });
   return runs;
@@ -263,10 +265,11 @@ function buildRuns(f) {
 const boxInView = (b, v) => !(b[3] < v.s || b[1] > v.n) && !(v.w <= v.e ? (b[2] < v.w || b[0] > v.e) : (b[0] > v.e && b[2] < v.w));
 // in-view stretches and the lowest vis_zoom among them (null: no stretch in view)
 function runsInView(f, view) {
-  let eff = Infinity;
+  let eff = Infinity, w = 0;
   const rs = [];
   for (const r of f._runs) if (boxInView(r.bbox, view)) { rs.push(r); if (r.vz < eff) eff = r.vz; }
-  return rs.length ? { rs, eff } : null;
+  for (const r of rs) if (r.vz === eff && r.w > w) w = r.w;
+  return rs.length ? { rs, eff, w } : null;
 }
 // local visible width (km) at flattened vertex i (rivers without seg_vz: the feature's typical width)
 const localWidthKm = (f, i) => f._runs && i >= 0 ? f._runs[f._runOf[i]].w : riverWidthKm(f);
@@ -365,7 +368,7 @@ function visibleCandidates(z, view) {
     if (f._kind !== 'line' && sizePx > (f._kind === 'area' ? 7 : 3.5) * diag && !sel) continue;
     // size priority: rivers by visible width, not length (a long river's edge anchor was culling Lake Baikal);
     // areas filling the screen are context, not the subject
-    const wKm = rv ? riverWidthKm(f) * 2 ** (-(rv.eff - f.vis_zoom) / SEG_K) : riverWidthKm(f);
+    const wKm = rv ? rv.w : riverWidthKm(f);
     const sizePrio = f._kind === 'line' ? Math.min(12, Math.log2(Math.max(1, wKm * 1000 / mpp) * 40))
       : Math.min(12, Math.log2(sizePx)) - (f._kind === 'area' && sizePx > 1.5 * diag ? 8 : 0);
     out.push({ f, sizePx, rv, prio: (sel ? 1e6 : 0) + (sticky ? 6 : 0) + 3 * established + f.salience * 10 + (f.curated ? 8 : 0) + sizePrio });
@@ -632,7 +635,7 @@ function whatsHere(p) {
       if (near && tooBig(f)) { around.push(f); continue; }
     } else if (g && /LineString/.test(g.type)) {
       // within the river's local visible width (or ~12px when zoomed out)
-      const tolKm = Math.max(riverWidthKm(f) / 2 + 0.3, 12 * mpp / 1000);
+      const tolKm = Math.max((f._maxW || riverWidthKm(f)) / 2 + 0.3, 12 * mpp / 1000);
       const b = f.bbox, pad = tolKm / 100;
       if (!b || (p.lng >= b[0] - pad && p.lng <= b[2] + pad && p.lat >= b[1] - pad && p.lat <= b[3] + pad))
         near = nearLine(f, p, 12 * mpp / 1000);
