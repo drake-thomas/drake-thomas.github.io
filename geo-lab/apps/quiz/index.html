@@ -34,6 +34,8 @@
   #browseList { columns: 2; column-gap: 18px; font-size: 13px; }
   #browseList div { break-inside: avoid; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
   #browseList div:hover { background: #2a3039; }
+  body.mm-collapsed #revealBody { grid-template-columns: 1fr; }
+  :root { --mm-top: 64px; --mm-shift: 0px; }  /* map tab under the top-right buttons, clear of the answer panel */
   .lvl { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
   @media (min-width: 1100px) {  /* keep the feature (screen center) visible after answering */
     body.revealed #ask { left: auto; right: 12px; transform: none; width: 480px; bottom: 12px; }
@@ -65,6 +67,7 @@
   <a class="btn" href="../../">⌂</a>
 </div>
 <div class="zoomctl">
+  <button id="rotBtn"></button>
   <button id="zIn" title="Zoom in (=)">+</button>
   <button id="zOut" title="Zoom out (-)">−</button>
 </div>
@@ -101,6 +104,8 @@ import { SRS, GRADES } from '../../lib/srs.js';
 import { zoomForKm, offsetKm, fmtKm, shuffle, rand, pick, geometryContains } from '../../lib/geo.js';
 import { Linkifier } from '../../lib/linkify.js';
 import { openWiki } from '../../lib/wikipanel.js';
+import { Minimap } from '../../lib/minimap.js';
+import { MOD_LABEL } from '../../lib/rotate.js';
 
 // ---------- deck definitions ----------
 const DECKS = {
@@ -188,12 +193,16 @@ const partialMode = () => deck.partial && settings.view === 'partial';
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} };
 
 const $ = id => document.getElementById(id);
-let partialNote = '', sv, srs, wholeSrs = null, all = [], cards = [], byId = {}, cur = null, streak = 0, mini, miniMarker, overlays = [], linker;
+let partialNote = '', exploring = false, mm, sv, srs, wholeSrs = null, all = [], cards = [], byId = {}, cur = null, streak = 0, mini, miniMarker, overlays = [], linker;
 
 async function main() {
   $('hDeck').textContent = deck.title + (partialMode() ? ' · partial' : '');
   document.title = deck.title + ' quiz';
   sv = new SatView($('sv'), { onZoom: z => updateZoomButtons() });
+  sv.nav.attachCompass($('rotBtn'));
+  window.__quiz = { sv, cur: () => cur, mini: () => mini, get mm() { return mm; } };  // headless tests
+  // Only the answer has a minimap here (the locator map in the reveal panel).
+  mm = new Minimap({ storageKey: 'geolab.quiz.minimap', targets: { reveal: $('mini') } });
   const data = await loadJSON(params.get('data') || '../../data/build/features.json');  // ?data= for dev fixtures
   all = data.features;
   linker = new Linkifier(all, await loadJSON('../../data/glossary.json').catch(() => ({})));
@@ -248,6 +257,7 @@ function showIntro() {
       <span class="pill">learning <b>${s.learning}</b></span><span class="pill">young <b>${s.young}</b></span><span class="pill">mature <b>${s.mature}</b></span>
     </div>
     <p class="small"><kbd>1</kbd>–<kbd>4</kbd> answer · <kbd>0</kbd> don't know · <kbd>-</kbd>/<kbd>=</kbd> or scroll to zoom (zooming out costs a little) · then <kbd>Enter</kbd> accepts the suggested grade, or pick <kbd>1</kbd>–<kbd>4</kbd> (Again/Hard/Good/Easy).</p>
+    <p class="small"><kbd>${MOD_LABEL}</kbd>-drag rotates the view · <kbd>N</kbd> undoes it (north-up once answered) · <kbd>M</kbd> collapses the locator map · after answering, drag and scroll freely.</p>
     <div class="row" style="margin-top:14px"><button class="primary" id="go">Start</button><button id="go2">Settings</button></div>`);
   $('go').onclick = () => { hideOverlay(); nextCard(); };
   $('go2').onclick = showSettings;
@@ -320,6 +330,8 @@ function preloadNext() {
 async function nextCard(forceExtra = false) {
   clearOverlays();
   document.body.classList.remove('revealed');
+  exploring = false; $('exploreBtn').textContent = 'Explore';
+  mm.setPhase('guess');
   let id = forceExtra ? srs.extra() : srs.next();
   if (!id) {
     const s = srs.stats();
@@ -427,7 +439,8 @@ function grade(g) {
 }
 
 function showReveal(f) {
-  sv.bounds = { min: 2, max: 21 };  // once answered, zoom freely
+  sv.unlockAfterAnswer();  // once answered: unclamped zoom, free pan, rotate; compass shows north
+  mm.setPhase('reveal');
   $('rName').textContent = f.name;
   $('rAka').textContent = (f.aka || []).join(' · ');
   $('rFacts').textContent = deck.facts(f).filter(Boolean).join(' · ');
@@ -453,11 +466,13 @@ function clearOverlays() { overlays.forEach(o => o.setMap(null)); overlays = [];
 
 function showMini(f) {
   if (!mini) {
-    mini = new google.maps.Map($('mini'), { center: f, zoom: 1, mapTypeId: 'terrain', disableDefaultUI: true, gestureHandling: 'cooperative', clickableIcons: false });
+    mini = new google.maps.Map($('mini'), { center: f, zoom: 1, mapTypeId: 'terrain', disableDefaultUI: true,
+      gestureHandling: 'greedy', clickableIcons: false });
     miniMarker = new google.maps.Marker({ map: mini });
+    mm.attachMap(mini);
   }
-  mini.setOptions({ center: { lat: f.lat, lng: f.lng }, zoom: 2 });
   miniMarker.setPosition({ lat: f.lat, lng: f.lng });
+  mm.fitOnce(() => mini.setOptions({ center: { lat: f.lat, lng: f.lng }, zoom: 2 }), 0);
 }
 
 // ---------- HUD / overlays / settings ----------
@@ -548,11 +563,11 @@ $('typedInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.pr
 $('exploreBtn').onclick = toggleExplore;
 $('settingsBtn').onclick = showSettings;
 $('browseBtn').onclick = showBrowse;
-function toggleExplore() {
+function toggleExplore() {  // labels + north-up; the view stays freely navigable either way
   if (!cur?.answered) return;
-  const on = sv.locked;
-  sv.setExplore(on);
-  $('exploreBtn').textContent = on ? 'Back' : 'Explore';
+  exploring = !exploring;
+  if (exploring) sv.setExplore(true); else sv.setLabels(false);
+  $('exploreBtn').textContent = exploring ? 'Labels off' : 'Explore';
 }
 addEventListener('keydown', e => {
   if (!$('overlay').classList.contains('hidden')) {
@@ -563,6 +578,8 @@ addEventListener('keydown', e => {
   if (e.key === '-' || e.key === '_') sv.zoomBy(-1);
   else if (e.key === '=' || e.key === '+') sv.zoomBy(1);
   else if (e.key === 'b' || e.key === 'B') showBrowse();
+  else if (e.key === 'm' || e.key === 'M') mm.toggle();
+  else if (e.key === 'n' || e.key === 'N') sv.nav.reset();
   else if (!cur) return;
   else if (!cur.answered) {
     if (/^[1-4]$/.test(e.key) && settings.mode === 'choice' && cur.opts?.[+e.key - 1]) answer(cur.opts[+e.key - 1]);

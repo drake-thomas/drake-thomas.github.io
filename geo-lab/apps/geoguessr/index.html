@@ -59,9 +59,8 @@
   body.reveal #guessWrap { width: min(900px, calc(100vw - 24px)); right: 50%; transform: translateX(50%); }
   body.reveal #guessMap { height: min(520px, calc(100vh - 230px)); }
   body.reveal #guessRow { display: none; }
-  /* Explore mode: results shrink to a corner card so the area can be browsed. */
-  body.reveal.explore #guessWrap { width: 320px; right: 12px; transform: none; }
-  body.reveal.explore #guessMap { display: none; }
+  /* Map collapsed after the guess (lib/minimap.js hides #guessMap): results shrink to a corner card. */
+  body.reveal.mm-collapsed #guessWrap { width: 320px; right: 12px; transform: none; }
   #result .row { display: flex; gap: 8px; justify-content: center; }
 
   #result { display: none; text-align: center; }
@@ -95,6 +94,7 @@
 </div>
 
 <div id="zoom">
+  <button id="rotBtn"></button>
   <button id="zIn" title="Zoom in (=)">+</button>
   <button id="zOut" title="Zoom out (-)">−</button>
 </div>
@@ -104,7 +104,7 @@
     <div class="dist" id="rDist"></div>
     <div class="pts" id="rPts"></div>
     <div class="row">
-      <button id="exploreBtn" title="Hide results and look around (Esc)">Explore</button>
+      <button id="exploreBtn" title="Collapse the map to the side and look around (M or Esc)">Hide map</button>
       <button id="featuresBtn" title="Open this spot in the Geo Lab feature explorer, with labels for what's around (F)">Features ↗</button>
       <button class="primary" id="nextBtn">Next round</button>
     </div>
@@ -118,8 +118,9 @@
 
 <div id="overlay"><div class="panel" id="overlayBody"></div></div>
 
-<script>
-'use strict';
+<script type="module">
+import { RotateNav, MOD_LABEL } from '../../lib/rotate.js';
+import { Minimap } from '../../lib/minimap.js';
 
 // ---------- Settings ----------
 const ROUNDS = 5;
@@ -193,7 +194,7 @@ function multiplier() {
 const fmtKm = km => km < 1 ? `${Math.round(km * 1000)} m` : km < 100 ? `${km.toFixed(1)} km` : `${Math.round(km).toLocaleString()} km`;
 
 // ---------- Maps ----------
-let sat, pre, guessMap, maxZoomSvc, guessMarker, answerMarker, line;
+let sat, pre, nav, mm, guessMap, maxZoomSvc, guessMarker, answerMarker, line;
 let game, round;
 
 function layoutRotor() {
@@ -204,11 +205,8 @@ function layoutRotor() {
   for (const m of [sat, pre]) if (m) google.maps.event.trigger(m, 'resize');
 }
 
-function setRotation(deg, animate) {
-  const rot = document.getElementById('rot');
-  rot.style.transition = animate ? '' : 'none';
-  rot.style.transform = `rotate(${deg}deg)`;
-}
+// Rotation (and Cmd-drag rotating, rotation-aware free pan/zoom after the guess) lives in lib/rotate.js.
+function setRotation(deg, animate) { nav.setRotation(deg, animate ? 1.2 : 0); }
 
 function bestImageryZoom(latLng) {
   return new Promise(res => maxZoomSvc.getMaxZoomAtLatLng(latLng, r =>
@@ -238,6 +236,8 @@ async function initMaps() {
   warm = new google.maps.Map(document.getElementById('warm'), { ...satOpts, isFractionalZoomEnabled: false });
   layoutRotor();
   addEventListener('resize', layoutRotor);
+  nav = new RotateNav({ container: document.getElementById('viewport'), rotEl: document.getElementById('rot'), getMap: () => sat });
+  nav.attachCompass(document.getElementById('rotBtn'));
 
   guessMap = new google.maps.Map(document.getElementById('guessMap'), {
     center: { lat: 20, lng: 0 }, zoom: 1, mapTypeId: 'roadmap',
@@ -245,6 +245,13 @@ async function initMaps() {
     clickableIcons: false, draggableCursor: 'crosshair',
   });
   maxZoomSvc = new google.maps.MaxZoomService();
+  // Guessing: the whole guess panel collapses to a tab. After the guess: only the map does, and the
+  // result card moves to the corner. Each phase remembers its own state.
+  mm = new Minimap({ storageKey: 'geolab.geoguessr.minimap',
+    targets: { guess: document.getElementById('guessWrap'), reveal: document.getElementById('guessMap') },
+    onChange: c => { document.getElementById('exploreBtn').textContent = c ? 'Show map' : 'Hide map'; } });
+  mm.attachMap(guessMap);
+  window.__gg = { sat, guessMap, nav, mm, round: () => round };  // headless tests
 
   guessMap.addListener('click', e => {
     if (!round || round.done) return;
@@ -253,6 +260,7 @@ async function initMaps() {
     guessMarker.setMap(guessMap);
     const b = document.getElementById('guessBtn');
     b.disabled = false; b.textContent = 'Guess';
+    mm.setNote('pin placed · Space');
   });
 }
 
@@ -330,7 +338,9 @@ function prepareNext() {
 
 async function nextRound() {
   game.round++;
-  document.body.classList.remove('reveal', 'explore');
+  document.body.classList.remove('reveal');
+  mm.setPhase('guess');
+  mm.setNote('');
   for (const m of [guessMarker, answerMarker, line]) if (m) m.setMap(null);
   const b = document.getElementById('guessBtn');
   b.disabled = true; b.textContent = 'Place a pin to guess';
@@ -352,9 +362,13 @@ async function nextRound() {
     setStatus('');
     document.getElementById('viewport').style.visibility = 'visible';
   });
-  sat.setOptions({ center: loc, zoom: startZoom, mapTypeId: 'satellite', gestureHandling: 'none' });
+  nav.setFree(false);  // gestureHandling 'none': the game drives the camera
+  sat.setOptions({ center: loc, zoom: startZoom, mapTypeId: 'satellite' });
   pre.setOptions({ center: loc });
-  setRotation(Math.random() * 360, false);
+  const deg = Math.random() * 360;
+  nav.setBase(deg);
+  nav.setNorthKnown(false);
+  setRotation(deg, false);
   schedulePrefetch();
   updateHud();
 }
@@ -397,17 +411,23 @@ function makeGuess() {
     strokeColor: '#ffcc33', strokeWeight: 2, strokeOpacity: 0.9,
   });
   document.body.classList.add('reveal');
+  mm.setPhase('reveal');
+  mm.setNote('');
   const bounds = new google.maps.LatLngBounds(); bounds.extend(g); bounds.extend(round.loc);
-  setTimeout(() => {
+  // One camera fit for the answer once the map has grown (deferred if it's collapsed); never repeated.
+  mm.fitOnce(() => {
     google.maps.event.trigger(guessMap, 'resize');
     if (km < 5) guessMap.setOptions({ center: round.loc, zoom: 12 });
     else guessMap.fitBounds(bounds, 60);
   }, 250);
 
-  // Un-rotate the satellite view and show labels so you can see where you were.
-  setRotation(0, true);
+  // Un-rotate the satellite view and show labels so you can see where you were; then it's yours:
+  // unclamped zoom, free pan, Cmd-drag rotation (lib/rotate.js keeps panning right while rotated).
   stopZoomAnim();
-  sat.setOptions({ mapTypeId: 'hybrid', gestureHandling: 'greedy' });
+  nav.setNorthKnown(true);
+  nav.rotateTo(0, 1.2);
+  sat.setOptions({ mapTypeId: 'hybrid' });
+  nav.setFree(true);
 
   document.getElementById('rDist').textContent = `${fmtKm(km)} away`;
   document.getElementById('rPts').innerHTML =
@@ -439,7 +459,7 @@ function showIntro() {
     <h1>🛰️ Satellite Geoguessr</h1>
     <p>You're dropped somewhere on land, very zoomed in, at a random rotation. Zoom out as little as you can, then pin your guess on the map at the bottom right.</p>
     <p>Score = distance score (up to 5,000) × zoom multiplier (1.00 → 0.25 based on how far out you zoomed). ${ROUNDS} rounds.</p>
-    <p><kbd>-</kbd>/<kbd>=</kbd> or scroll to zoom &nbsp;·&nbsp; <kbd>Space</kbd> guess / next &nbsp;·&nbsp; <kbd>Esc</kbd> explore after guessing</p>
+    <p><kbd>-</kbd>/<kbd>=</kbd> or scroll to zoom &nbsp;·&nbsp; <kbd>Space</kbd> guess / next &nbsp;·&nbsp; <kbd>M</kbd> collapse / show the map &nbsp;·&nbsp; <kbd>${MOD_LABEL}</kbd>-drag rotate, <kbd>N</kbd> undo (north-up after guessing)</p>
     ${best ? `<p>Best game: <b>${best.toLocaleString()}</b> / ${(ROUNDS * 5000).toLocaleString()}</p>` : ''}
     <p style="margin-top:14px"><button class="primary" id="startBtn">Start</button></p>`);
   document.getElementById('startBtn').onclick = newGame;
@@ -471,11 +491,9 @@ function openFeatures() {
 }
 document.getElementById('featuresBtn').onclick = openFeatures;
 document.getElementById('exploreBtn').onclick = toggleExplore;
-function toggleExplore() {
+function toggleExplore() {  // after the guess: collapse / show the answer map
   if (!round || !round.done) return;
-  const on = document.body.classList.toggle('explore');
-  document.getElementById('exploreBtn').textContent = on ? 'Show map' : 'Explore';
-  if (!on) setTimeout(() => google.maps.event.trigger(guessMap, 'resize'), 50);
+  mm.toggle();
 }
 document.getElementById('pinBtn').onclick = () => document.getElementById('guessWrap').classList.toggle('pinned');
 
@@ -495,8 +513,15 @@ addEventListener('keydown', e => {
   if (e.key === '-' || e.key === '_') zoomBy(-1);
   else if (e.key === '=' || e.key === '+') zoomBy(1);
   else if (e.key === 'Escape') toggleExplore();
+  else if (e.key === 'm' || e.key === 'M') mm?.toggle();
+  else if (e.key === 'n' || e.key === 'N') nav?.reset();
   else if ((e.key === 'f' || e.key === 'F') && round?.done) openFeatures();
-  else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); round?.done ? next() : makeGuess(); }
+  else if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    if (round?.done) next();
+    else if (mm.collapsed && !guessMarker?.getMap()) mm.expand();  // no pin yet: open the map to place one
+    else makeGuess();
+  }
 });
 
 // ---------- Boot ----------

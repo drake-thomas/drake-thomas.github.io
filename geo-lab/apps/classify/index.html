@@ -49,6 +49,7 @@
   <a class="btn" href="../../">⌂</a>
 </div>
 <div class="zoomctl">
+  <button id="rotBtn"></button>
   <button id="zIn" title="Zoom in (=)">+</button>
   <button id="zOut" title="Zoom out (-)">−</button>
 </div>
@@ -73,6 +74,8 @@
 import { SatView } from '../../lib/satview.js';
 import { loadMaps, loadJSON } from '../../lib/maps.js';
 import { haversineKm, fmtKm, shuffle, rand, PolygonIndex } from '../../lib/geo.js';
+import { Minimap } from '../../lib/minimap.js';
+import { MOD_LABEL } from '../../lib/rotate.js';
 
 const MODES = {
   jungles: {
@@ -98,7 +101,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 
 let sv, samples = [], queue = [], cur = null, session = { n: 0, score: 0 }, streak = 0;
 let stats = loadStats();
-let guessMap, guessMarker, answerMarker, line, countries, countryIdx, countryFeature;
+let mm, exploring = false, guessMap, guessMarker, answerMarker, line, countries, countryIdx, countryFeature;
 
 function loadStats() { try { return JSON.parse(localStorage.getItem(STATS_KEY)) || { n: 0, score: 0, conf: {}, seen: {} }; } catch { return { n: 0, score: 0, conf: {}, seen: {} }; } }
 function saveStats() { try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch {} }
@@ -107,6 +110,13 @@ async function main() {
   $('hMode').textContent = mode.title;
   document.title = `${mode.title}: where's this?`;
   sv = new SatView($('sv'));
+  sv.nav.attachCompass($('rotBtn'));
+  // Cities has a guess/answer map; jungles has none (no targets -> no tab, M does nothing).
+  const mapTargets = modeId === 'cities' ? { guess: $('mapWrap'), reveal: $('mapWrap') } : {};
+  mm = new Minimap({ storageKey: 'geolab.classify.minimap', targets: mapTargets, onChange: c => {
+    if (modeId === 'cities' && cur && !cur.answered && !cur.guess?.c) $('pickNote').textContent = c ? 'Map collapsed: press M (or the Map tab) to pick a country.' : 'Click the country you think this is.';
+  } });
+  window.__cls = { sv, mm, cur: () => cur, guessMap: () => guessMap };  // headless tests
   let data;
   try { data = await loadJSON(params.get('data') || mode.data); }
   catch { $('status').textContent = `No dataset yet (${mode.data}). It's still being built.`; return; }
@@ -147,6 +157,7 @@ function preloadNext() {
 
 async function next() {
   document.body.classList.remove('revealed');
+  exploring = false; $('exploreBtn').textContent = 'Explore';
   if (!queue.length) refillQueue();
   const s = queue.shift();
   cur = { s, answered: false };
@@ -156,8 +167,9 @@ async function next() {
   await sv.show({ lat: s.lat, lng: s.lng, zoom: z, minZoom: z - mode.maxZoomOut, maxZoom: z + 2.5 });
   cur.startZoom = z;
   $('question').textContent = mode.question;
-  $('zoomNote').textContent = `you can zoom out ${mode.maxZoomOut} levels`;
+  $('zoomNote').textContent = `you can zoom out ${mode.maxZoomOut} levels · ${MOD_LABEL}-drag rotates${modeId === 'cities' ? ' · M map' : ''}`;
   $('ask').classList.remove('hidden');
+  mm.setPhase('guess');
   if (modeId === 'jungles') {
     $('classBtns').querySelectorAll('button').forEach(b => { b.classList.remove('right', 'wrong'); b.disabled = false; });
   } else {
@@ -196,6 +208,7 @@ async function setupCityMap() {
     center: { lat: 20, lng: 10 }, zoom: 1, mapTypeId: 'roadmap', disableDefaultUI: true, zoomControl: true,
     gestureHandling: 'greedy', clickableIcons: false, draggableCursor: 'crosshair',
   });
+  mm.attachMap(guessMap);
   guessMap.data.setStyle(f => ({ fillOpacity: 0, strokeWeight: 0 }));
   guessMap.addListener('click', e => {
     if (!cur || cur.answered) return;
@@ -207,6 +220,7 @@ async function setupCityMap() {
     highlightCountry(c, '#4fb3ff');
     $('pickNote').textContent = c ? c.properties.name : 'No country there; click on land.';
     $('guessBtn').disabled = !c;
+    mm.setNote(c ? c.properties.name : '');
   });
 }
 
@@ -220,7 +234,8 @@ function resetCityMap() {
   for (const m of [guessMarker, answerMarker, line]) m?.setMap(null);
   highlightCountry(null);
   $('guessBtn').disabled = true;
-  $('pickNote').textContent = 'Click the country you think this is.';
+  $('pickNote').textContent = mm.collapsed ? 'Map collapsed: press M (or the Map tab) to pick a country.' : 'Click the country you think this is.';
+  mm.setNote('');
   guessMap.setOptions({ center: { lat: 20, lng: 10 }, zoom: 1 });
 }
 
@@ -240,10 +255,12 @@ function answerCity() {
   const truth = countries.find(c => c.properties.iso_a3 === s.iso_a3);
   highlightCountry(truth, exact ? '#5ad17a' : '#ff6b6b');
   const b = new google.maps.LatLngBounds(); b.extend(cur.guess.p); b.extend({ lat: s.lat, lng: s.lng });
-  setTimeout(() => { if (km < 300) guessMap.setOptions({ center: { lat: s.lat, lng: s.lng }, zoom: 5 }); else guessMap.fitBounds(b, 40); }, 200);
   reveal(exact ? 'ok' : pts ? 'mid' : 'no',
     exact ? '✓ Right country' : sub ? `≈ Right region (${esc(g.name)})` : cont ? `~ Right continent (${esc(g.name)})` : `✗ ${esc(g.name)}`,
     `${s.city}, ${s.country}`, `${s.subregion || ''} · ${fmtKm(km)} from your pin · pop ${s.pop ? (+s.pop).toLocaleString() : '?'}`);
+  // One camera fit for the answer (after the map grows); deferred if the map is collapsed, never repeated.
+  mm.setNote('');
+  mm.fitOnce(() => { if (km < 300) guessMap.setOptions({ center: { lat: s.lat, lng: s.lng }, zoom: 5 }); else guessMap.fitBounds(b, 40); }, 200);
 }
 
 // ---------- shared ----------
@@ -260,8 +277,9 @@ function record(s, pts, answer) {
 
 function reveal(cls, verdict, title, sub) {
   const s = cur.s;
-  sv.bounds = { min: 2, max: 21 };  // once answered, zoom freely
-  $('zoomNote').textContent = 'zoom is unlocked';
+  sv.unlockAfterAnswer();  // once answered: unclamped zoom, free pan, rotate; compass shows north
+  mm.setPhase('reveal');
+  $('zoomNote').textContent = `free view: drag, scroll, ${MOD_LABEL}-drag to rotate, N north-up`;
   $('verdict').className = cls; $('verdict').innerHTML = verdict;
   $('rTitle').textContent = title;
   $('rSub').textContent = sub;
@@ -325,11 +343,11 @@ function miniMd(md) {
 function showOverlay(html) { $('overlayBody').innerHTML = html; $('overlay').classList.remove('hidden'); }
 function hideOverlay() { $('overlay').classList.add('hidden'); }
 
-function toggleExplore() {
+function toggleExplore() {  // labels + north-up; the view stays freely navigable either way
   if (!cur?.answered) return;
-  const on = sv.locked;
-  sv.setExplore(on);
-  $('exploreBtn').textContent = on ? 'Back' : 'Explore';
+  exploring = !exploring;
+  if (exploring) sv.setExplore(true); else sv.setLabels(false);
+  $('exploreBtn').textContent = exploring ? 'Labels off' : 'Explore';
 }
 
 $('zIn').onclick = () => sv.zoomBy(1);
@@ -345,9 +363,15 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   if (e.key === '-' || e.key === '_') sv.zoomBy(-1);
   else if (e.key === '=' || e.key === '+') sv.zoomBy(1);
+  else if (e.key === 'm' || e.key === 'M') mm.toggle();
+  else if (e.key === 'n' || e.key === 'N') sv.nav.reset();
   else if (!cur) return;
   else if (!cur.answered && modeId === 'jungles' && /^[1-3]$/.test(e.key)) answerClass(mode.classes[+e.key - 1][0]);
-  else if (!cur.answered && modeId === 'cities' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); answerCity(); }
+  else if (!cur.answered && modeId === 'cities' && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    if (mm.collapsed && !cur.guess?.c) mm.expand();  // nothing picked yet: open the map to pick
+    else answerCity();
+  }
   else if (cur.answered && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); }
   else if (cur.answered && (e.key === 'e' || e.key === 'E')) toggleExplore();
 });

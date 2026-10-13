@@ -6,13 +6,18 @@
 //   await sv.show({ focus: { lat, lng, sx, sy }, zoom, ... })  // put (lat,lng) at screen offset (sx,sy) px
 //                                                               // from center; zooming pivots around it
 //   sv.zoomBy(-1); sv.zoomTo(9.5); sv.zoom; sv.lowestZoom
-//   sv.setExplore(true, { labels: true });  // un-rotate, free pan/zoom, optional labels
+//   sv.setFree(true)       // after answering: free pan/zoom (rotation-aware, see lib/rotate.js)
+//   sv.setLabels(true)     // hybrid labels on/off
+//   sv.setExplore(true, { labels: true });  // free + north-up + labels
+//   sv.unlockAfterAnswer() // unclamped zoom, free pan, compass shows north
+//   sv.nav                 // RotateNav: Cmd/Ctrl-drag rotation, nav.reset(), nav.attachCompass(btn)
 //
 // Why the extra machinery: the map sits in an oversized rotated square, and
 // slow-loading tiles draw an axis-aligned grid that gives the rotation away.
 // A hidden second map ("pre", twice the size) walks through the next zoom-out
 // levels so their tiles are already cached when the player zooms out.
 import { loadMaps } from './maps.js';
+import { RotateNav } from './rotate.js';
 
 const LOOKAHEAD = 3, PREFETCH_TIMEOUT_MS = 1500;
 
@@ -30,6 +35,7 @@ export class SatView {
     container.classList.add('satview');
     container.innerHTML = '<div class="sv-rot"><div class="sv-map sv-sat"></div><div class="sv-map sv-pre"></div></div>';
     this.rot = container.querySelector('.sv-rot');
+    this.nav = new RotateNav({ container, rotEl: this.rot, getMap: () => this.map });
     this.ready = this._init();
   }
 
@@ -85,7 +91,8 @@ export class SatView {
     this.container.classList.add('sv-loading');
     this.bounds = { min: minZoom, max: maxZoom };
     this.zCur = this.zTarget = Math.max(minZoom, Math.min(maxZoom, zoom));
-    this.rotation = rotation;
+    this.nav.setBase(rotation);
+    this.nav.setNorthKnown(false);
     this.focus = null;
     if (focus) {
       // Screen offset -> offset in the (rotated) map frame, in CSS px from the map center.
@@ -108,11 +115,8 @@ export class SatView {
     this.onZoom?.(this.zCur);
   }
 
-  setRotation(deg, animate = true) {
-    this.rotation = deg;
-    this.rot.style.transition = animate ? 'transform 1.2s ease' : 'none';
-    this.rot.style.transform = `rotate(${deg}deg)`;
-  }
+  get rotation() { return this.nav.deg; }
+  setRotation(deg, animate = true) { this.nav.setRotation(deg, animate ? 1.2 : 0); }
 
   // ----- zoom -----
   zoomBy(d) {
@@ -188,16 +192,33 @@ export class SatView {
     this.warm.setOptions({ center, zoom: Math.ceil(zoom) });
   }
 
-  // ----- explore mode (after answering) -----
-  setExplore(on, { labels = true } = {}) {
+  // ----- after answering: free navigation -----
+  setFree(on) {
     if (!this.map) return;
     this.locked = !on;
+    if (on) this._stopAnim();
+    this.nav.setFree(on);  // gestureHandling: Google's 'greedy' when north-up, ours when rotated
+  }
+
+  setLabels(on) { this.map?.setOptions({ mapTypeId: on ? 'hybrid' : 'satellite' }); }
+
+  /** Unclamped zoom, free pan/zoom/rotate, and the compass now shows (and resets to) north. */
+  unlockAfterAnswer() {
+    this.bounds = { min: 2, max: 21 };
+    this.setFree(true);
+    this.nav.setNorthKnown(true);
+  }
+
+  setExplore(on, { labels = true } = {}) {
+    if (!this.map) return;
     if (on) {
-      this._stopAnim();
-      this.setRotation(0, true);
-      this.map.setOptions({ gestureHandling: 'greedy', mapTypeId: labels ? 'hybrid' : 'satellite' });
+      this.setFree(true);
+      this.nav.setNorthKnown(true);
+      this.nav.rotateTo(0, 1.2);
+      this.setLabels(labels);
     } else {
-      this.map.setOptions({ gestureHandling: 'none', mapTypeId: 'satellite' });
+      this.setLabels(false);
+      this.setFree(false);
     }
   }
 }
