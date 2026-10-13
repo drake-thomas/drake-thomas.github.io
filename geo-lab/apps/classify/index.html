@@ -213,7 +213,8 @@ async function setupCityMap() {
   guessMap.addListener('click', e => {
     if (!cur || cur.answered) return;
     const p = e.latLng.toJSON();
-    const c = countryIdx.find(p.lng, p.lat);
+    // snap near-misses on the coarse coastline to the nearest country (25 km, or ~12 px when zoomed out)
+    const c = countryIdx.findNear(p.lng, p.lat, Math.max(25, 12 * 156543 * Math.cos(p.lat * Math.PI / 180) / 2 ** guessMap.getZoom() / 1000));
     cur.guess = { p, c: c ? c.properties : null };
     if (!guessMarker) guessMarker = new google.maps.Marker({ map: guessMap });
     guessMarker.setMap(guessMap); guessMarker.setPosition(p);

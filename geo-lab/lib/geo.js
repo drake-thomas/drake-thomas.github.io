@@ -62,6 +62,25 @@ export class PolygonIndex {
     }
     return null;
   }
+  // Like find(), but a click just off a coarse coastline (Natural Earth 50m misses lower Manhattan, small islands,
+  // harbour edges) snaps to the nearest country within maxKm, measured to the boundary segments.
+  findNear(lng, lat, maxKm = 25) {
+    const hit = this.find(lng, lat); if (hit) return hit;
+    const k = Math.cos(lat * Math.PI / 180) * 111.32, pad = maxKm / 111.32 / Math.max(0.2, Math.cos(lat * Math.PI / 180));
+    let best = null, bestD = maxKm;
+    for (const it of this.items) {
+      const [w, s, e, n] = it.bbox;
+      if (lng < w - pad || lng > e + pad || lat < s - maxKm / 111.32 || lat > n + maxKm / 111.32) continue;
+      const g = it.f.geometry, polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+      for (const poly of polys) for (const ring of poly) for (let i = 1; i < ring.length; i++) {
+        const ax = (ring[i - 1][0] - lng) * k, ay = (ring[i - 1][1] - lat) * 111.32, bx = (ring[i][0] - lng) * k, by = (ring[i][1] - lat) * 111.32;
+        const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+        const d = Math.hypot(ax + t * dx, ay + t * dy);
+        if (d < bestD) { bestD = d; best = it.key; }
+      }
+    }
+    return best;
+  }
 }
 
 // Distance (km) from a point to the nearest vertex of a line/polygon (cheap approximation).
