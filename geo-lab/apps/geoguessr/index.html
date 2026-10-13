@@ -105,6 +105,7 @@
     <div class="pts" id="rPts"></div>
     <div class="row">
       <button id="exploreBtn" title="Hide results and look around (Esc)">Explore</button>
+      <button id="featuresBtn" title="Open this spot in the Geo Lab feature explorer, with labels for what's around (F)">Features ↗</button>
       <button class="primary" id="nextBtn">Next round</button>
     </div>
   </div>
@@ -462,6 +463,13 @@ document.getElementById('zIn').onclick = () => zoomBy(1);
 document.getElementById('zOut').onclick = () => zoomBy(-1);
 document.getElementById('guessBtn').onclick = makeGuess;
 document.getElementById('nextBtn').onclick = next;
+// After a round: open the answer location in the feature explorer (new tab, so the game keeps its state)
+function openFeatures() {
+  if (!round?.done) return;
+  const z = Math.max(5, Math.min(12, Math.round((sat.getZoom() || 9) - 1)));
+  window.open(`../explorer/#${round.loc.lat.toFixed(4)},${round.loc.lng.toFixed(4)},${z}z`, 'geolab-explorer');
+}
+document.getElementById('featuresBtn').onclick = openFeatures;
 document.getElementById('exploreBtn').onclick = toggleExplore;
 function toggleExplore() {
   if (!round || !round.done) return;
@@ -487,6 +495,7 @@ addEventListener('keydown', e => {
   if (e.key === '-' || e.key === '_') zoomBy(-1);
   else if (e.key === '=' || e.key === '+') zoomBy(1);
   else if (e.key === 'Escape') toggleExplore();
+  else if ((e.key === 'f' || e.key === 'F') && round?.done) openFeatures();
   else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); round?.done ? next() : makeGuess(); }
 });
 
