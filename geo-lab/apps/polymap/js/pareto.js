@@ -173,7 +173,9 @@ function panel(rows, met) {
     .attr('fill', (r) => MODE[r.mode].color);
   // selective direct labels: frontier points only, skipping ones that would collide
   const placed = [];
-  const labels = [...onFront].sort((a, b) => a[state.x] - b[state.x]);
+  // frontier points, plus the pentagonal monohedra (always labelled so they're easy to find)
+  const labels = [...onFront, ...data.filter((r) => r.family === 'Pentagonal monohedra' && !onFront.has(r) && (state.front === 'all' || r.mode === 'gnomonic'))]
+    .sort((a, b) => a[state.x] - b[state.x]);
   const lg = svg.append('g');
   for (const r of labels) {
     const right = x(r[state.x]) > W - M.right - 40;

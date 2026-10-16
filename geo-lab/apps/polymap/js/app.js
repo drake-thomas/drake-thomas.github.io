@@ -264,6 +264,8 @@ const NAMES = {
   oD: 'deltoidal hexecontahedron', gC: 'pentagonal icositetrahedron', gD: 'pentagonal hexecontahedron',
   mC: 'disdyakis dodecahedron', mD: 'disdyakis triacontahedron', cD: 'chamfered dodecahedron (Goldberg)',
   cC: 'chamfered cube', ccD: 'Goldberg GP(4,0)', dP: 'bipyramid',
+  '@pent48': 'pentagonal monohedron, 48 congruent faces', '@pent120': 'pentagonal monohedron, 120 congruent faces',
+  gaC: 'gyro cuboctahedron (canonical)', gaD: 'gyro icosidodecahedron (canonical)',
 };
 
 function updatePolyInfo() {
@@ -470,6 +472,8 @@ const BASES = [
     ['oD', 'Deltoidal hexecontahedron'], ['gC', 'Pentagonal icositetrahedron'], ['mC', 'Disdyakis dodecahedron'], ['mD', 'Disdyakis triacontahedron']]],
   ['Prisms & co.', [['P3', 'Triangular prism'], ['P5', 'Pentagonal prism'], ['P6', 'Hexagonal prism'], ['A4', 'Square antiprism'],
     ['A5', 'Pentagonal antiprism'], ['dP4', 'Octagonal… square bipyramid'], ['dP5', 'Pentagonal bipyramid'], ['dA5', 'Pentagonal trapezohedron'], ['Y4', 'Square pyramid']]],
+  ['Pentagonal monohedra (congruent faces)', [['@pent48', '48 congruent pentagons (O)'], ['@pent120', '120 congruent pentagons (I)'],
+    ['gaC', 'Same map, canonical: gyro cuboctahedron'], ['gaD', 'Same map, canonical: gyro icosidodecahedron']]],
   ['Goldberg / geodesic', [['cD', 'Chamfered dodecahedron'], ['cC', 'Chamfered cube'], ['tkD', 'Goldberg GP(3,0)'], ['ccD', 'Goldberg GP(4,0)'], ['kD', 'Geodesic seed (kD)']]],
 ];
 

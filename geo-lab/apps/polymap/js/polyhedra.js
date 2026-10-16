@@ -2,6 +2,7 @@
 // half-space modifications (truncation / chamfer), geodesic and flat face splits.
 // A polyhedron is { verts: [[x,y,z]], faces: [[i,j,k,...]] } with faces CCW seen from outside.
 import * as V from './vec.js';
+import { MONOHEDRA } from './monohedra-data.js';
 
 // ---------------------------------------------------------------- basics
 export function newellNormal(pts) {
@@ -443,12 +444,20 @@ const notationCache = new Map();
 export function fromNotation(str) {
   const s = str.replace(/\s+/g, '');
   if (notationCache.has(s)) return notationCache.get(s);
-  const m = s.match(/^([a-z]*)([TCODIPAY])(\d*)$/);
-  if (!m) throw new Error(`Can't parse "${str}". Use ops [${Object.keys(OPS).join('')}] then a seed T C O D I P<n> A<n> Y<n>`);
+  const m = s.match(/^([a-z]*)(@\w+|[TCODIPAY])(\d*)$/);
+  if (!m) throw new Error(`Can't parse "${str}". Use ops [${Object.keys(OPS).join('')}] then a seed T C O D I P<n> A<n> Y<n> or @${Object.keys(MONOHEDRA).join(' @')}`);
   const [, ops, sd, num] = m;
-  let n = num ? parseInt(num, 10) : 5;
-  if ('PAY'.includes(sd)) n = Math.max(3, Math.min(30, n));
-  let p = seed(sd, n);
+  let p;
+  if (sd[0] === '@') {
+    // named exact solid (e.g. a monohedron): keep its geometry as-is unless operators are applied
+    const named = MONOHEDRA[sd.slice(1)];
+    if (!named) throw new Error(`Unknown named solid ${sd} (have: @${Object.keys(MONOHEDRA).join(', @')})`);
+    p = orientFaces({ verts: named.verts.map((v) => v.slice()), faces: named.faces.map((f) => f.slice()) });
+  } else {
+    let n = num ? parseInt(num, 10) : 5;
+    if ('PAY'.includes(sd)) n = Math.max(3, Math.min(30, n));
+    p = seed(sd, n);
+  }
   for (let i = ops.length - 1; i >= 0; i--) {
     const op = OPS[ops[i]];
     if (!op) throw new Error('Unknown operator ' + ops[i]);
