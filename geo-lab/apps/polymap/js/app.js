@@ -192,7 +192,8 @@ function generateNet(kind, { fit = true } = {}) {
     case 'land':
     default: {
       kind = 'land';
-      const w = app.landW.map((x, i) => x + 1e-6 * G.edges[i].len + 1e-9 * ((i * 7919) % 101));
+      // world data may still be loading on a slow connection; fall back to edge length only
+      const w = (app.landW || G.edges.map(() => 0)).map((x, i) => x + 1e-6 * G.edges[i].len + 1e-9 * ((i * 7919) % 101));
       folds = N.treeFromWeights(G, w);
     }
   }
@@ -222,7 +223,7 @@ function butterflyWeights() {
     w += lat > -5 ? 1.5 : -1.5;                                // north + equator kept, south cut
     const dl = Math.abs(((lon - 160 + 540) % 360) - 180);       // distance from the 160E cut meridian
     if (lat > 5 && dl < 30) w -= 6;
-    return w + 0.2 * (app.landW[e.id] || 0);
+    return w + 0.2 * (app.landW?.[e.id] || 0);
   });
 }
 
@@ -913,6 +914,9 @@ async function main() {
   app.tex = app.world.texture;
   const linked = loadFromHash();
   if (linked) {
+    rebuild('reset');
+  } else if (app.G) {
+    // the user already picked something while world data was loading: keep it, re-cut with land
     rebuild('reset');
   } else if (restored && rebuild('keep')) {
     if (!netView.view || !isFinite(netView.view.k)) netView.fit(N.layoutBBox(app.G, app.L));
