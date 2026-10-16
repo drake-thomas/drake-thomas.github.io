@@ -1,0 +1,116 @@
+:root {
+  --bg: #f3f1ec;
+  --panel: #fbfaf7;
+  --ink: #23272b;
+  --muted: #6d747b;
+  --line: #dcd8cf;
+  --accent: #b5452f;
+  --accent-ink: #fff;
+  --btn: #ffffff;
+  --btn-hover: #f1eee7;
+  --seg-on: #2f3a42;
+  --view-bg: #eef0ee;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, select, input, textarea { font: inherit; color: inherit; }
+
+.topbar { height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 14px;
+  border-bottom: 1px solid var(--line); background: var(--panel); }
+.brand { font-weight: 700; font-size: 15px; letter-spacing: .2px; white-space: nowrap; }
+.logo { color: var(--accent); }
+.status { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbtns { display: flex; gap: 10px; align-items: center; }
+.toplink { color: var(--accent); text-decoration: none; font-weight: 600; }
+.toplink:hover { text-decoration: underline; }
+
+main { display: grid; grid-template-columns: 310px minmax(280px, 0.9fr) minmax(320px, 1.25fr);
+  height: calc(100vh - 44px); }
+#panel { overflow-y: auto; border-right: 1px solid var(--line); background: var(--panel); padding: 6px 12px 40px; }
+.view { position: relative; min-width: 0; background: var(--view-bg); border-right: 1px solid var(--line); }
+.view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#netWrap { background: #f6f5f1; }
+#netWrap canvas { cursor: grab; }
+#globe { cursor: grab; }
+canvas.dragging { cursor: grabbing !important; }
+
+.viewbar { position: absolute; left: 10px; right: 10px; display: flex; gap: 8px; justify-content: center; pointer-events: none; }
+.viewbar > * { pointer-events: auto; }
+.viewbar.top { top: 10px; }
+.viewbar.bottom { bottom: 8px; font-size: 11.5px; text-align: center; }
+
+details { border-bottom: 1px solid var(--line); padding: 8px 0 10px; }
+summary { cursor: pointer; font-weight: 650; font-size: 12.5px; text-transform: uppercase; letter-spacing: .5px;
+  color: #3b4248; padding: 2px 0 6px; list-style-position: outside; }
+.lbl { display: block; color: var(--muted); font-size: 11.5px; margin: 8px 0 3px; }
+.lbl.inline { display: inline; margin: 0 6px 0 0; }
+.muted { color: var(--muted); }
+.note { color: var(--muted); font-size: 11.5px; margin: 6px 0 0; }
+.sub { margin: 12px 0 4px; font-weight: 600; font-size: 11.5px; color: #4a5258; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.info { margin-top: 6px; color: #3f474e; background: #f0ede6; border-radius: 6px; padding: 5px 8px; font-size: 11.5px; }
+.stats { margin-top: 8px; font-size: 12px; color: #3f474e; background: #f0ede6; border-radius: 6px; padding: 6px 8px; }
+.stats b { font-weight: 650; }
+.row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.grow { flex: 1; min-width: 0; }
+
+button { background: var(--btn); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+button:hover { background: var(--btn-hover); }
+button:active { transform: translateY(1px); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.primary:hover { filter: brightness(1.07); }
+button.ghost { background: transparent; }
+button.small { padding: 3px 7px; font-size: 12px; }
+button:disabled { opacity: .5; cursor: default; }
+select, input[type=text], textarea { width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
+textarea { resize: vertical; }
+
+.ops { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px; }
+.ops button { padding: 4px 0; font-size: 12px; }
+.ops button b { font-family: ui-monospace, Menlo, monospace; }
+.btngrid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 6px; }
+.btngrid button { font-size: 12px; padding: 5px 4px; }
+
+.slider { display: grid; grid-template-columns: 112px 1fr 38px; align-items: center; gap: 6px; margin-top: 4px; }
+.slider label { color: #4a5258; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slider input { width: 100%; accent-color: var(--accent); }
+.slider output { font-family: ui-monospace, Menlo, monospace; font-size: 11px; text-align: right; color: var(--muted); }
+
+.seg { display: flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: #fff; }
+.seg button { flex: 1; border: 0; border-radius: 0; border-right: 1px solid var(--line); font-size: 12px; padding: 5px 6px; }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--seg-on); color: #fff; }
+.seg.compact { box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.seg.compact button { flex: none; padding: 4px 10px; }
+
+.checks { display: grid; gap: 3px; }
+.checks label { display: flex; gap: 6px; align-items: center; }
+
+.progress { height: 6px; background: #e8e4da; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.progress > div { height: 100%; width: 0; background: var(--accent); transition: width .1s; }
+
+.modal { position: fixed; inset: 0; background: rgba(20,24,28,.35); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.modal[hidden] { display: none; }
+.card { position: relative; background: var(--panel); max-width: 640px; margin: 16px; padding: 18px 22px; border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.25); max-height: 85vh; overflow: auto; }
+.card h2 { margin: 0 0 8px; }
+.card li { margin: 6px 0; }
+.close { position: absolute; right: 10px; top: 8px; border: 0; font-size: 20px; background: transparent; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #2f3a42; color: #fff;
+  padding: 8px 14px; border-radius: 8px; box-shadow: 0 4px 18px rgba(0,0,0,.2); z-index: 30; max-width: 80vw; }
+.toast.err { background: #a33224; }
+.toast[hidden] { display: none; }
+
+@media (max-width: 1100px) {
+  main { grid-template-columns: 1fr 1fr; grid-template-rows: 55vh auto; height: auto; }
+  #panel { grid-column: 1 / -1; grid-row: 2; border-right: 0; border-top: 1px solid var(--line); }
+  .view { height: 55vh; }
+}
+@media (max-width: 700px) {
+  main { grid-template-columns: 1fr; grid-template-rows: 50vh 50vh auto; }
+  #panel { grid-row: 3; }
+  .view { height: 50vh; }
+  .viewbar.bottom { display: none; }
+  .seg.compact button { padding: 4px 6px; font-size: 11px; }
+}

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pareto Study</title>
+<script src="vendor/d3.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --hl: #0b0b0b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --hl: #f0efec;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --hl: #f0efec;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text-primary); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { padding: 16px 20px 6px; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
+h1 { font-size: 18px; margin: 0; font-weight: 650; }
+a { color: var(--series-1); }
+.sub { color: var(--text-secondary); max-width: 900px; margin: 0 20px 10px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 6px 20px 12px; border-bottom: 1px solid var(--border); }
+.controls label { display: inline-flex; gap: 6px; align-items: center; color: var(--text-secondary); }
+select, button { font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+button { cursor: pointer; }
+.legend { display: inline-flex; gap: 14px; align-items: center; }
+.legend button { display: inline-flex; gap: 6px; align-items: center; border: 0; background: transparent; padding: 2px 4px; color: var(--text-primary); }
+.legend button.off { opacity: .35; }
+.legend svg { overflow: visible; }
+.status { color: var(--muted); margin-left: auto; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 14px; padding: 14px 20px 24px; }
+.panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 10px 4px; min-width: 0; }
+.panel h2 { font-size: 13px; font-weight: 600; margin: 2px 4px 0; }
+.panel p { margin: 0 4px 2px; color: var(--muted); font-size: 11.5px; }
+.panel svg { display: block; width: 100%; height: auto; }
+.axis text { fill: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.axis path, .axis line { stroke: var(--axis); }
+.gridline line { stroke: var(--grid); }
+.gridline path { display: none; }
+.axlabel { fill: var(--text-secondary); font-size: 11px; }
+.dot { stroke: var(--surface-1); stroke-width: 2px; cursor: pointer; }
+.dot.dim { opacity: .38; }
+.dot.hl { stroke: var(--hl); stroke-width: 2px; opacity: 1; }
+.front { fill: none; stroke-width: 2px; }
+.flabel { font-size: 10.5px; fill: var(--text-secondary); paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; pointer-events: none; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; box-shadow: 0 6px 20px rgba(0,0,0,.18); font-size: 12px; max-width: 320px; display: none; }
+#tip .t { font-weight: 600; margin-bottom: 4px; }
+#tip .r { display: flex; justify-content: space-between; gap: 14px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+#tip .r b { color: var(--text-primary); font-weight: 600; }
+#tip .hint { color: var(--muted); margin-top: 4px; }
+details.table { margin: 0 20px 30px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+details.table summary { cursor: pointer; font-weight: 600; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 8px; }
+th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; white-space: nowrap; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+th { cursor: pointer; color: var(--text-secondary); font-weight: 600; position: sticky; top: 0; background: var(--surface-1); }
+.tablewrap { max-height: 520px; overflow: auto; }
+@media (max-width: 600px) { header, .controls, .grid { padding-left: 16px; padding-right: 16px; } .sub { margin: 0 16px 10px; } .status { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pareto study: land cut vs distortion</h1>
+  <a href="index.html">← back to the Map Lab</a>
+  <a href="../../" id="geoLabLink" hidden>Geo Lab</a>
+  <script>if (location.pathname.includes('/geo-lab/')) document.getElementById('geoLabLink').hidden = false;</script>
+</header>
+<p class="sub">Each polyhedron was rotated to minimize land crossed by its cuts (simulated annealing over rotations; the net for each rotation is the exact max-land spanning tree), then measured under each in-face projection. Lines trace the Pareto frontier (lower-left is better on both axes); faded dots are dominated. Hover for details, click a dot to open that map in the lab.</p>
+<div class="controls">
+  <label>X axis
+    <select id="xSel">
+      <option value="landKm">Land crossed by cuts (km)</option>
+      <option value="cutKm">Total cut length (km)</option>
+      <option value="F">Number of faces</option>
+    </select>
+  </label>
+  <label>X scale <select id="xScale"><option value="symlog">symlog</option><option value="linear">linear</option></select></label>
+  <label>Y scale
+    <select id="yScale">
+      <option value="log">log</option>
+      <option value="zoom">linear, fit frontier</option>
+      <option value="linear">linear, all points</option>
+    </select>
+  </label>
+  <label>Frontier
+    <select id="frontSel">
+      <option value="mode">per projection</option>
+      <option value="all">over all projections</option>
+    </select>
+  </label>
+  <label>Family <select id="famSel"><option value="">all families</option></select></label>
+  <span class="legend" id="legend"></span>
+  <span class="status" id="status">Loading…</span>
+</div>
+<div class="grid" id="grid"></div>
+<details class="table">
+  <summary>Table view</summary>
+  <div class="tablewrap"><table id="table"></table></div>
+</details>
+<div id="tip"></div>
+<script type="module" src="js/pareto.js"></script>
+</body>
+</html>

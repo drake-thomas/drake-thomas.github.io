@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polyhedral Map Lab</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="vendor/d3.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">⬡</span> Polyhedral Map Lab</div>
+  <div id="status" class="status">Loading world data…</div>
+  <div class="topbtns">
+    <a class="toplink" id="geoLabLink" href="../../" hidden>← Geo Lab</a>
+    <a class="toplink" href="pareto.html" target="_blank">Pareto study ↗</a>
+    <button id="btnHelp" class="ghost">Help</button>
+  </div>
+</header>
+
+<main>
+  <aside id="panel">
+    <details open>
+      <summary>Presets</summary>
+      <div class="row">
+        <select id="presetSel" class="grow"></select>
+        <button id="presetApply" class="primary">Load</button>
+      </div>
+      <p class="note" id="presetNote"></p>
+    </details>
+
+    <details open>
+      <summary>Polyhedron</summary>
+      <label class="lbl">Base solid</label>
+      <select id="baseSel"></select>
+      <label class="lbl">Conway notation <span class="muted">(ops apply right→left)</span></label>
+      <div class="row">
+        <input id="notation" type="text" spellcheck="false" class="grow mono" value="I">
+        <button id="notationApply">Apply</button>
+      </div>
+      <div class="ops" id="opsRow"></div>
+      <div class="info mono" id="polyInfo"></div>
+
+      <div class="sub">Modify</div>
+      <div class="slider"><label>Geodesic frequency</label><input id="geo" type="range" min="1" max="6" step="1" value="1"><output id="geoOut">1</output></div>
+      <div class="slider"><label>Truncate vertices</label><input id="truncV" type="range" min="0" max="1" step="0.01" value="0"><output id="truncVOut">0</output></div>
+      <div class="slider"><label>Chamfer edges</label><input id="chamferE" type="range" min="0" max="1" step="0.01" value="0"><output id="chamferEOut">0</output></div>
+      <div class="slider"><label>Stretch X</label><input id="sx" type="range" min="0.4" max="2.5" step="0.01" value="1"><output id="sxOut">1</output></div>
+      <div class="slider"><label>Stretch Y</label><input id="sy" type="range" min="0.4" max="2.5" step="0.01" value="1"><output id="syOut">1</output></div>
+      <div class="slider"><label>Stretch Z (polar)</label><input id="sz" type="range" min="0.4" max="2.5" step="0.01" value="1"><output id="szOut">1</output></div>
+      <div class="row">
+        <label class="lbl inline">Split every face</label>
+        <select id="flatSplit" class="grow">
+          <option value="none">no</option>
+          <option value="fan">fan from centre</option>
+          <option value="mid">midpoint (corners + centre)</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="muted grow" id="splitInfo">No individual face splits</span>
+        <button id="clearSplits" class="small">Clear splits</button>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Projection within faces</summary>
+      <div class="seg" id="modeSeg">
+        <button data-v="gnomonic">Gnomonic</button>
+        <button data-v="fuller">Arc-linear</button>
+        <button data-v="equal">Equal-area</button>
+      </div>
+      <p class="note" id="modeNote"></p>
+    </details>
+
+    <details open>
+      <summary>Orientation on the globe</summary>
+      <div class="slider"><label>Yaw (about pole)</label><input id="yaw" type="range" min="-180" max="180" step="0.1" value="0"><output id="yawOut">0</output></div>
+      <div class="slider"><label>Pitch</label><input id="pitch" type="range" min="-90" max="90" step="0.1" value="0"><output id="pitchOut">0</output></div>
+      <div class="slider"><label>Roll</label><input id="roll" type="range" min="-180" max="180" step="0.1" value="0"><output id="rollOut">0</output></div>
+      <div class="btngrid">
+        <button id="vNorth">Vertex → N pole</button>
+        <button id="fNorth">Face → N pole</button>
+        <button id="eNorth">Edge → N pole</button>
+        <button id="oReset">Reset</button>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Optimize orientation</summary>
+      <p class="note" style="margin-top:0">Searches rotations (random screening → simulated annealing from several seeds → polish) to minimize land crossed by cuts.</p>
+      <div class="checks" style="margin-top:6px">
+        <label title="Only rotate; your current cut/fold edges stay as they are"><input type="checkbox" id="optFixed"> Keep my net (fixed cuts)</label>
+        <label title="Only spin about the polar axis — keeps whatever is at the poles there"><input type="checkbox" id="optSpin"> Spin about the pole only</label>
+        <label><input type="checkbox" id="optPreview" checked> Live preview</label>
+      </div>
+      <div class="row">
+        <label class="lbl inline">Effort</label>
+        <select id="optEffort" class="grow">
+          <option value="8000">Quick (~1 s)</option>
+          <option value="30000" selected>Thorough (~5 s)</option>
+          <option value="120000">Exhaustive (~20 s)</option>
+        </select>
+      </div>
+      <div class="slider" title="Also penalize cuts that run close to a coast (0 = count land only)"><label>Coast clearance, km</label><input id="optClear" type="range" min="0" max="1000" step="25" value="250"><output id="optClearOut">250</output></div>
+      <div class="btngrid">
+        <button id="optRun" class="primary">Optimize</button>
+        <button id="optRevert" disabled>Revert</button>
+      </div>
+      <div class="progress" id="optProgress" hidden><div></div></div>
+      <div class="stats" id="optResult" hidden></div>
+    </details>
+
+    <details open>
+      <summary>Net</summary>
+      <div class="btngrid">
+        <button data-gen="land" title="Max spanning tree over land: cuts run through the oceans">Ocean cuts</button>
+        <button data-gen="bfs" title="Breadth-first tree from a central face">Compact</button>
+        <button data-gen="dfs" title="Depth-first tree: long strips">Strips</button>
+        <button data-gen="random">Random tree</button>
+        <button data-gen="explode" title="Every face its own piece">Explode</button>
+        <button id="northUp" title="Rotate every piece so north points up">North-up pieces</button>
+        <button id="arrange">Arrange pieces</button>
+        <button id="fitNet">Fit view</button>
+      </div>
+      <div class="stats" id="netStats"></div>
+    </details>
+
+    <details>
+      <summary>Display</summary>
+      <div class="checks">
+        <label><input type="checkbox" data-disp="raster" checked> Land / ocean raster</label>
+        <label><input type="checkbox" data-disp="coast" checked> Coastlines</label>
+        <label><input type="checkbox" data-disp="borders"> Country borders</label>
+        <label><input type="checkbox" data-disp="graticule" checked> Graticule (15°)</label>
+        <label><input type="checkbox" data-disp="tint" checked> Tint faces</label>
+        <label><input type="checkbox" data-disp="labels"> Face numbers</label>
+        <label><input type="checkbox" data-disp="tissot"> Tissot circles (distortion)</label>
+      </div>
+      <label class="lbl">Custom texture <span class="muted">(equirectangular image, e.g. Blue Marble)</span></label>
+      <div class="row">
+        <input id="texFile" type="file" accept="image/*" class="grow">
+        <button id="texReset" class="small">Default</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>File</summary>
+      <div class="btngrid">
+        <button id="exportPng" class="primary">Export net PNG</button>
+        <button id="saveJson">Save config</button>
+        <button id="loadJsonBtn">Load config</button>
+        <button id="resetAll">Reset everything</button>
+      </div>
+      <input id="loadJson" type="file" accept="application/json,.json" hidden>
+      <label class="lbl">Custom polyhedron <span class="muted">(JSON: {"verts":[[x,y,z]…],"faces":[[i,j,k…]…]} — convex, containing origin)</span></label>
+      <textarea id="customPoly" rows="3" class="mono" placeholder='{"verts":[[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],"faces":[[0,1,2],[0,3,1],[0,2,3],[1,3,2]]}'></textarea>
+      <button id="customApply" class="small">Use custom polyhedron</button>
+    </details>
+  </aside>
+
+  <section class="view" id="globeWrap">
+    <canvas id="globe"></canvas>
+    <div class="viewbar top">
+      <div class="seg compact" id="dragSeg">
+        <button data-v="view">Drag: rotate view</button>
+        <button data-v="poly">Drag: move polyhedron</button>
+      </div>
+    </div>
+    <div class="viewbar bottom muted">Shift-drag does the other one · wheel zooms · click an edge to cut / fold it</div>
+  </section>
+
+  <section class="view" id="netWrap">
+    <canvas id="netc"></canvas>
+    <div class="viewbar top">
+      <div class="seg compact" id="toolSeg">
+        <button data-v="cut">Click: cut / fold edge</button>
+        <button data-v="fan">Click: split face (fan)</button>
+        <button data-v="mid">Click: split face (midpoint)</button>
+      </div>
+    </div>
+    <div class="viewbar bottom muted">Drag a piece to move · Shift-drag rotates · double-click: north-up · drag background to pan · wheel zooms</div>
+  </section>
+</main>
+
+<div id="help" class="modal" hidden>
+  <div class="card">
+    <button class="close" id="helpClose">×</button>
+    <h2>Polyhedral Map Lab</h2>
+    <p>The globe is centrally projected onto a convex polyhedron, each face is flattened, and the faces are unfolded into a net.</p>
+    <ul>
+      <li><b>Left: globe.</b> Red lines are <i>cuts</i>, dashed lines are <i>folds</i>. Use "Drag: move polyhedron" (or Shift-drag) to slide the polyhedron over the Earth; the net updates live.</li>
+      <li><b>Right: net.</b> Click any edge (on either view) to toggle it. Cutting a fold splits a piece off, so you can make disjoint pieces like Waterman or Cahill maps. Clicking a cut between two pieces joins them (the smaller one moves). Clicking a cut inside a single piece re-hinges a flap onto that edge.</li>
+      <li>Hovering an edge highlights <i>both</i> places it appears in the net, so you can see what a cut separates.</li>
+      <li><b>Split face</b> tools subdivide a face flat (it stays in the same plane), adding new edges you can cut along — that's how Fuller avoided slicing through Australia and Asia.</li>
+      <li><b>Polyhedron</b>: pick a solid or type Conway notation (d dual, a ambo, k kis, t truncate, j join, e expand, b bevel, o ortho, m meta, g gyro, s snub, c chamfer; seeds T C O D I, P<i>n</i> prism, A<i>n</i> antiprism, Y<i>n</i> pyramid). Truncate / chamfer / stretch give irregular, non-uniform solids.</li>
+      <li><b>Projection within faces</b>: Gnomonic is the true central projection; Arc-linear spaces points by arc length (Fuller-like, seamless on any solid); Equal-area is exact within each face triangle.</li>
+      <li><b>Minimize land cuts</b> searches rotations for the orientation where cuts cross the least land — Fuller's design criterion.</li>
+    </ul>
+    <p class="muted">Your work is autosaved in this browser. Save config to keep a copy.</p>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script>if (location.pathname.includes('/geo-lab/')) document.getElementById('geoLabLink').hidden = false;</script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
